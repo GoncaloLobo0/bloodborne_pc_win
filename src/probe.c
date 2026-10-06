@@ -146,8 +146,8 @@ static void describe(char *line, size_t size, uintptr_t rip) {
     } else
         snprintf(line, size, "RIP %p", (void *)rip);
 }
-/* The process is ending: where it happened, the guest frame chain, the thread. */
-static __attribute__((noreturn)) void fatal_exception(EXCEPTION_POINTERS *ep) {
+/* Where it happened, the guest frame chain, the thread. */
+static void report_exception(EXCEPTION_POINTERS *ep) {
     const EXCEPTION_RECORD *r = ep->ExceptionRecord;
     const CONTEXT *c = ep->ContextRecord;
     char where[256], line[512], thread[64] = "?";
@@ -180,8 +180,12 @@ static __attribute__((noreturn)) void fatal_exception(EXCEPTION_POINTERS *ep) {
         write_err(line);
         rbp = frame[0];
     }
+}
+/* The process is ending. */
+static __attribute__((noreturn)) void fatal_exception(EXCEPTION_POINTERS *ep) {
+    report_exception(ep);
     fflush(NULL);
-    _exit(r->ExceptionCode == EXCEPTION_ACCESS_VIOLATION ? 128 + 11 : 128 + 4);
+    _exit(ep->ExceptionRecord->ExceptionCode == EXCEPTION_ACCESS_VIOLATION ? 128 + 11 : 128 + 4);
 }
 static int fatal_code(DWORD code) {
     switch (code) {
@@ -236,6 +240,13 @@ static LONG CALLBACK vectored_handler(EXCEPTION_POINTERS *ep) {
     /* Guest code has no unwind information: nothing else can handle its faults. */
     if ((uintptr_t)c->Rip - (uintptr_t)image < 0x10000000) fatal_exception(ep);
     last_record = *r; last_context = *c; has_last = 1;
+    /* Host code on a guest thread: its own handlers may still take the fault, but if none does,
+     * Windows cannot walk the guest frames above it and ends the process without a report, so it
+     * is reported now. */
+    if (runtime_thread_is_guest()) {
+        write_err("Fault in host code on a game thread (passed on to its handlers):\n");
+        report_exception(ep);
+    }
     return EXCEPTION_CONTINUE_SEARCH;
 }
 static LONG WINAPI unhandled_filter(EXCEPTION_POINTERS *ep) { fatal_exception(ep); }

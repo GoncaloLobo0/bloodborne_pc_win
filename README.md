@@ -8,7 +8,7 @@ THIS PROJECT IS NOT RELATED TO SHADPS4. ALL QUESTIONS RELATED TO THIS PROJECT SH
 > **Windows fork.** This branch also builds and runs on Windows 10/11 x86-64:
 > `windows\setup.cmd`, `windows\build.cmd`, then `windows\launcher.cmd`. See
 > [docs/WINDOWS.md](docs/WINDOWS.md) for what differs from Linux and how the port works.
-> It passes its tests but has not been played on Windows yet.
+> It boots and runs Bloodborne 1.09 to the title screen; gameplay is not tested yet.
 
 bbport is the counterpart of Wine + DXVK for a single game: *Bloodborne* for PlayStation 4
 (CUSA03173, game version 1.09) on an x86-64 Linux PC. The game's original executable runs

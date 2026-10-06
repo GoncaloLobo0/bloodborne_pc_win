@@ -202,6 +202,33 @@ static void direct_memory(void) {
     assert(*(uint64_t *)x==0); /* released allocation does not leak previous data */
     assert(release(a,length)==0); /* release also unmaps owned mapping */
 }
+/* Guest threads ending through scePthreadExit (a jump past the guest frames back to the thread's
+ * start) and through returning; the joiner gets each result. Values kept in registers across the
+ * jump must survive it. */
+typedef void (ABI *ThreadExit)(void *);
+typedef void *(ABI *ThreadEntry)(void *);
+typedef int32_t (ABI *ThreadCreate)(void **, void **, ThreadEntry, void *, const char *);
+typedef int32_t (ABI *ThreadJoin)(void *, void **);
+static ABI __attribute__((noinline)) void exit_deep(void *value, int depth) {
+    volatile char frame[256];
+    frame[0] = (char)depth;
+    if (depth) exit_deep(value, depth - 1);
+    GET(ThreadExit, "3kg7rT0NQIs#p#J")(value);
+    (void)frame;
+}
+static ABI void *exiting_thread(void *value) { exit_deep(value, 8); return NULL; }
+static ABI void *returning_thread(void *value) { return (char *)value + 1; }
+static void thread_exits(void) {
+    ThreadCreate create = GET(ThreadCreate, "6UgtwV+0zb4#p#J");
+    ThreadJoin join = GET(ThreadJoin, "onNY9Byn-W8#p#J");
+    for (int i = 0; i < 16; ++i) {
+        void *threads[2] = {NULL, NULL}, *results[2] = {NULL, NULL};
+        assert(create(&threads[0], NULL, exiting_thread, (void *)(uintptr_t)(0x1000 + i), "exiting") == 0);
+        assert(create(&threads[1], NULL, returning_thread, (void *)(uintptr_t)(0x2000 + i), "returning") == 0);
+        assert(join(threads[0], &results[0]) == 0 && results[0] == (void *)(uintptr_t)(0x1000 + i));
+        assert(join(threads[1], &results[1]) == 0 && results[1] == (void *)(uintptr_t)(0x2001 + i));
+    }
+}
 static void memory_primitives(void) {
     typedef void *(ABI *Set)(void *,int,size_t);
     typedef void *(ABI *Copy)(void *,const void *,size_t);
@@ -351,6 +378,7 @@ int main(int argc,char **argv) {
     if (argc>1 && !strcmp(argv[1],"--rwlock-concurrency")) { rw_concurrency(); return 0; }
     if (argc>1 && !strcmp(argv[1],"--rwlock-timeouts")) { rw_timeouts(); return 0; }
     libc_support(); posix_mutexes(); wall_time(); exit_handlers(); guards(); mutexes(); direct_memory(); memory_primitives();
+    thread_exits();
     rw_lifecycle(); rw_concurrency(); rw_timeouts();
     puts("PASS: callback lifecycle, guard ABI, mutex errors, shared direct memory, memory primitives, resolver scope");
     return 0;

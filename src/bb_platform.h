@@ -5,14 +5,22 @@
 #ifdef _WIN32
 #include <stdint.h>
 #include <stddef.h>
-/* Recovery points that jump over guest frames. MinGW's longjmp unwinds through SEH frames,
- * which guest code has none of (no unwind tables): the builtin pair restores registers only. */
-typedef void *sigjmp_buf[5];
-#define sigsetjmp(buf, savemask) __builtin_setjmp(buf)
-#define siglongjmp(buf, value) __builtin_longjmp(buf, 1)
-typedef sigjmp_buf bb_jmp_buf;
-#define bb_setjmp(buf) __builtin_setjmp(buf)
-#define bb_longjmp(buf) __builtin_longjmp(buf, 1)
+/* Recovery points that jump over guest frames. MinGW's longjmp unwinds through SEH frames, which
+ * guest code has none of (no unwind tables); clang's __builtin_setjmp keeps a biased frame address
+ * on Win64 and restores a wrong rbp. This pair (compat.c) saves and restores the callee-saved
+ * registers of the Windows ABI, nothing else. */
+typedef unsigned long long bb_jmp_buf[32];
+typedef bb_jmp_buf sigjmp_buf;
+#ifdef __cplusplus
+extern "C" {
+#endif
+__attribute__((returns_twice)) int bb_setjmp(bb_jmp_buf buf);
+__attribute__((noreturn)) void bb_longjmp(bb_jmp_buf buf);
+#ifdef __cplusplus
+}
+#endif
+#define sigsetjmp(buf, savemask) bb_setjmp(buf)
+#define siglongjmp(buf, value) bb_longjmp(buf)
 #ifdef __cplusplus
 extern "C" {
 #endif

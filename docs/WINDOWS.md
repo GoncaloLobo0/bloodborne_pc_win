@@ -3,11 +3,11 @@
 The Windows build of bbport: the same game code running natively on the CPU, the same renderer,
 launcher and scripts, on Windows 10/11 x86-64 instead of Linux.
 
-> **Status: builds and passes its tests; not yet played.** The loader, runtime and renderer start
-> on Windows (synthetic game images, the window and Vulkan presenter, FSR, the in-game menu), and
-> the runtime, memory, file, pad and Python test suites pass. It has not been run with the game
-> yet: expect the first runs to find problems, and please report them with the log
-> (launcher: *Save the log and statistics to a file*).
+> **Status: boots and runs; not yet played through.** With Bloodborne 1.09 it starts, loads and
+> renders steadily at 60 FPS through the title screen (3-minute runs without input, RX 6650 XT,
+> Windows 10 22H2), and the runtime, memory, file, pad and Python test suites pass. Gameplay has
+> not been tested yet: please report problems with the log (launcher: *Save the log and
+> statistics to a file*).
 
 ## Requirements
 

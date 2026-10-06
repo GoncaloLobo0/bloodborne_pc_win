@@ -78,6 +78,10 @@ uint32_t runtime_thread_tls_offset(void) {
     }
     return 0x1480+8*(uint32_t)tls_slot;
 }
+/* 1 on a thread that runs game code (it has a guest TCB). */
+int runtime_thread_is_guest(void) {
+    return tls_slot!=TLS_OUT_OF_INDEXES && TlsGetValue(tls_slot)!=NULL;
+}
 static void set_gs(void *base) {
     runtime_thread_tls_offset();
     if (!TlsSetValue(tls_slot,base)) { fputs("STOP: TlsSetValue for the guest TCB failed\n",stderr); exit(21); }

@@ -16,6 +16,8 @@ void runtime_restart(void);
 void runtime_memory_init(void);
 /* gs-relative offset of the slot that holds the guest TCB (runtime_thread.c). */
 uint32_t runtime_thread_tls_offset(void);
+/* 1 on a thread that runs game code. */
+int runtime_thread_is_guest(void);
 #endif
 #define ABI __attribute__((sysv_abi))
 typedef void (ABI *GuestCallback)(void);

@@ -19,6 +19,11 @@
 #include <thread>
 #include <vector>
 #include <SDL3/SDL.h>
+#ifdef _WIN32
+#include <exception>
+#include <typeinfo>
+#include <execinfo.h>
+#endif
 #include "../bbgpu.h"
 #include "common/elf_info.h"
 #include "common/logging/log.h"
@@ -247,9 +252,29 @@ static void StartProfileWriter() {
 
 #ifdef _WIN32
 namespace Common::NtApi { void Initialize(); }
-// bbport (Windows): the ntdll entry points shadPS4's common code calls, before anything runs.
+// bbport (Windows): a C++ exception nothing catches before the game's frames (they have no unwind
+// tables) ends in std::terminate with the thrower's stack intact: what it was and where.
+[[noreturn]] static void ReportTerminate() {
+    std::fputs("STOP: uncaught C++ exception", stderr);
+    if (const auto current = std::current_exception()) {
+        try {
+            std::rethrow_exception(current);
+        } catch (const std::exception& e) {
+            std::fprintf(stderr, " (%s): %s", typeid(e).name(), e.what());
+        } catch (...) {
+            std::fputs(" (not a std::exception)", stderr);
+        }
+    }
+    std::fputs("\nThrown from:\n", stderr);
+    void* frames[48];
+    backtrace_symbols_fd(frames, backtrace(frames, 48), 2);
+    std::fflush(nullptr);
+    std::_Exit(134);
+}
+// The ntdll entry points shadPS4's common code calls, before anything runs.
 [[maybe_unused]] static const bool g_ntapi_ready = [] {
     Common::NtApi::Initialize();
+    std::set_terminate(ReportTerminate);
     return true;
 }();
 #endif

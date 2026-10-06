@@ -55,14 +55,14 @@ if (( windows )); then
         -DBB_LTO="${BB_LTO:-ON}" -DCMAKE_C_COMPILER=clang -DCMAKE_CXX_COMPILER=clang++ >/dev/null
     echo "Windows build: LTO ${BB_LTO:-ON}"
     targets=(bb-probe bb-gpu-capabilities)
-    if [[ ${1:-} == --test ]]; then targets+=(runtime-test sema-test content-test); fi
+    if [[ ${1:-} == --test ]]; then targets+=(runtime-test sema-test memory-test content-test); fi
     if ! ninja -C out/gpu "${targets[@]}" > out/gpu-build.log 2>&1; then
         grep -v '^\[' out/gpu-build.log | tail -40 >&2
         echo 'Build failed (full log: out/gpu-build.log)' >&2; exit 1
     fi
     echo "Built $PWD/out/bb-probe.exe"
     if [[ ${1:-} == --test ]]; then
-        out/runtime-test.exe && out/sema-test.exe && out/content-test.exe
+        out/runtime-test.exe && out/sema-test.exe && out/memory-test.exe && out/content-test.exe
     fi
     exit 0
 fi
@@ -97,6 +97,8 @@ if [[ ${1:-} == --test ]]; then
     out/file-mods-test
     "$CC" -std=c11 -O2 -g -Wall -Wextra -Werror -pthread -I. -Isrc tests/test_sema.c "${runtime[@]}" out/libatrac9.a -lm "${gpu[@]}" "${libraries[@]}" -o out/sema-test
     out/sema-test
+    "$CC" -std=c11 -O2 -g -Wall -Wextra -Werror -pthread -I. -Isrc tests/test_memory.c "${runtime[@]}" out/libatrac9.a -lm "${gpu[@]}" "${libraries[@]}" -o out/memory-test
+    out/memory-test
     "$CC" -std=c11 -D_GNU_SOURCE -O2 -g -Wall -Wextra -Werror -I. -Isrc tests/test_content.c src/runtime_content.c -o out/content-test
     out/content-test
 fi

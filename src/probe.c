@@ -204,6 +204,9 @@ static LONG CALLBACK vectored_handler(EXCEPTION_POINTERS *ep) {
     if (r->ExceptionCode == EXCEPTION_ACCESS_VIOLATION && r->NumberParameters >= 2) {
         const uintptr_t address = (uintptr_t)r->ExceptionInformation[1];
         const int write = r->ExceptionInformation[0] == 1;
+        /* A mapping being replaced there (no gap on Linux): the access waits for it. The GPU's
+         * tracking must not see the page while its protection is being restored. */
+        if (runtime_memory_transition_wait(address)) return EXCEPTION_CONTINUE_EXECUTION;
         /* GPU page tracking (write-protected guest pages) is resolved first. */
         if (gpu_enabled) {
             ucontext_t uc;
@@ -219,7 +222,7 @@ static LONG CALLBACK vectored_handler(EXCEPTION_POINTERS *ep) {
             c->Rip = (DWORD64)(uintptr_t)recover_jump;
             return EXCEPTION_CONTINUE_EXECUTION;
         }
-        /* The range was being mapped again, or another thread changed the page meanwhile. */
+        /* A mapping change began meanwhile, or another thread changed the page. */
         if (retries < 1000 && runtime_memory_fault_retry(address, write)) { ++retries; return EXCEPTION_CONTINUE_EXECUTION; }
     }
     retries = 0;

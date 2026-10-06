@@ -31,9 +31,20 @@ static HANDLE section;
 static uint64_t section_size;
 static unsigned char *backing;
 static uintptr_t range_start, range_end;
-/* A view being mapped again in pieces: its range, while the flag is set. */
+/* Mapping changes in progress: the span whose pages may be missing for a moment (Linux replaces
+ * mappings atomically). Nested changes (a view cut in two inside a map) keep the outer span. */
 static _Atomic int transition_active;
 static _Atomic uintptr_t transition_start, transition_end;
+static int transition_depth;
+static void begin_transition(uintptr_t a, uintptr_t b) {
+    if (transition_depth++) return;
+    atomic_store(&transition_start, a);
+    atomic_store(&transition_end, b);
+    atomic_store(&transition_active, 1);
+}
+static void end_transition(void) {
+    if (!--transition_depth) atomic_store(&transition_active, 0);
+}
 
 static DWORD win_prot(int prot) {
     const int r = prot & 1, w = prot & 2, x = prot & 4;
@@ -140,20 +151,28 @@ static int map_view(uintptr_t a, uintptr_t b, uint64_t phys) {
 static int split_view(size_t i, uintptr_t at) {
     const Region r = regions[i];
     const size_t n = query_runs(r.start, r.end);
-    atomic_store(&transition_start, r.start);
-    atomic_store(&transition_end, r.end);
-    atomic_store(&transition_active, 1);
+    begin_transition(r.start, r.end);
     int error = 0;
     if (!unmap_view2(GetCurrentProcess(), (void *)r.start, MEM_PRESERVE_PLACEHOLDER)) { report("unmapping a view", r.start, r.end - r.start); error = -1; }
     if (!error && !VirtualFree((void *)r.start, at - r.start, MEM_RELEASE | MEM_PRESERVE_PLACEHOLDER)) { report("splitting a placeholder", r.start, at - r.start); error = -1; }
     if (!error && (map_view(r.start, at, r.phys) || map_view(at, r.end, r.phys + (at - r.start)))) { report("mapping a view again", r.start, r.end - r.start); error = -1; }
     if (!error) {
-        DWORD old;
-        for (size_t k = 0; k < n; ++k)
-            if (runs[k].protect != PAGE_EXECUTE_READWRITE)
-                VirtualProtect((void *)runs[k].start, runs[k].end - runs[k].start, runs[k].protect, &old);
+        /* Per piece: VirtualProtect does not cross the boundary between the two new views. */
+        const uintptr_t pieces[2][2] = {{r.start, at}, {at, r.end}};
+        for (size_t k = 0; k < n && !error; ++k) {
+            if (runs[k].protect == PAGE_EXECUTE_READWRITE) continue;
+            for (int p = 0; p < 2; ++p) {
+                const uintptr_t a = runs[k].start > pieces[p][0] ? runs[k].start : pieces[p][0];
+                const uintptr_t b = runs[k].end < pieces[p][1] ? runs[k].end : pieces[p][1];
+                DWORD old;
+                if (a < b && !VirtualProtect((void *)a, b - a, runs[k].protect, &old)) {
+                    report("protecting a view mapped again", a, b - a);
+                    error = -1;
+                }
+            }
+        }
     }
-    atomic_store(&transition_active, 0);
+    end_transition();
     if (error) return -1;
     regions[i].end = at;
     return insert(i + 1, (Region){at, r.end, R_VIEW, r.phys + (at - r.start)});
@@ -202,8 +221,14 @@ static long release(uintptr_t a, uintptr_t b) {
     return (long)first;
 }
 
-int vm_map(uintptr_t address, uint64_t size, int prot, uint64_t phys) {
-    if (phys + size > section_size) return -1;
+/* The span a change of [a, b) touches: whole regions at both ends (a view cut there is mapped
+ * again in pieces). */
+static void change_span(uintptr_t a, uintptr_t b, uintptr_t *start, uintptr_t *end) {
+    size_t i = find(a), j = find(b - 1);
+    *start = i < region_count && regions[i].start < a ? regions[i].start : a;
+    *end = j < region_count && regions[j].end > b ? regions[j].end : b;
+}
+static int map_locked(uintptr_t address, uint64_t size, int prot, uint64_t phys) {
     long i = release(address, address + size);
     if (i < 0) return -1;
     if (map_view(address, address + size, phys)) { report("mapping guest memory", address, size); return -1; }
@@ -215,7 +240,26 @@ int vm_map(uintptr_t address, uint64_t size, int prot, uint64_t phys) {
     }
     return 0;
 }
-int vm_release(uintptr_t address, uint64_t size) { return release(address, address + size) < 0 ? -1 : 0; }
+int vm_map(uintptr_t address, uint64_t size, int prot, uint64_t phys) {
+    if (phys + size > section_size || address < range_start || address + size > range_end) return -1;
+    /* Threads still using what was mapped there wait for the new view (runtime_memory_fault_retry):
+     * MAP_FIXED replaces a mapping without a gap on Linux. */
+    uintptr_t start, end;
+    change_span(address, address + size, &start, &end);
+    begin_transition(start, end);
+    const int result = map_locked(address, size, prot, phys);
+    end_transition();
+    return result;
+}
+int vm_release(uintptr_t address, uint64_t size) {
+    if (address < range_start || address + size > range_end) return -1;
+    uintptr_t start, end;
+    change_span(address, address + size, &start, &end);
+    begin_transition(start, end);
+    const long result = release(address, address + size);
+    end_transition();
+    return result < 0 ? -1 : 0;
+}
 void *vm_alloc_private(uintptr_t address, uint64_t size, int prot) {
     long i = release(address, address + size);
     if (i < 0) return NULL;
@@ -239,13 +283,15 @@ int vm_protect(uintptr_t address, uint64_t size, int prot) {
     return result;
 }
 
+int runtime_memory_transition_wait(uintptr_t address) {
+    if (!atomic_load(&transition_active) || address < atomic_load(&transition_start) ||
+        address >= atomic_load(&transition_end))
+        return 0;
+    while (atomic_load(&transition_active)) SwitchToThread();
+    return 1;
+}
 int runtime_memory_fault_retry(uintptr_t address, int write) {
-    if (atomic_load(&transition_active)) {
-        if (address >= atomic_load(&transition_start) && address < atomic_load(&transition_end)) {
-            while (atomic_load(&transition_active)) SwitchToThread();
-            return 1;
-        }
-    }
+    if (runtime_memory_transition_wait(address)) return 1;
     /* The page changed under the fault (mapped again, unprotected by another thread): retry. */
     MEMORY_BASIC_INFORMATION info;
     if (!VirtualQuery((void *)address, &info, sizeof(info)) || info.State != MEM_COMMIT) return 0;

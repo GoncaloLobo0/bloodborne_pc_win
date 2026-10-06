@@ -244,8 +244,8 @@ if (WIN32)
     # All of bbruntime and bbgpu is linked, as with the shared library on Linux: guest imports
     # resolve by name at run time, and static initializers must not be dropped.
     target_link_libraries(bb-probe PRIVATE "$<LINK_LIBRARY:WHOLE_ARCHIVE,bbruntime,bbgpu>")
-    # Runtime tests (build.sh --test on Linux): ninja -C out/gpu runtime-test sema-test content-test
-    foreach(TEST_NAME runtime sema)
+    # Runtime tests (build.sh --test): ninja -C out/gpu runtime-test sema-test memory-test content-test
+    foreach(TEST_NAME runtime sema memory)
         add_executable(${TEST_NAME}-test EXCLUDE_FROM_ALL ${BB_ROOT}/tests/test_${TEST_NAME}.c)
         set_target_properties(${TEST_NAME}-test PROPERTIES C_STANDARD 11 C_EXTENSIONS ON
             RUNTIME_OUTPUT_DIRECTORY ${BB_ROOT}/out)

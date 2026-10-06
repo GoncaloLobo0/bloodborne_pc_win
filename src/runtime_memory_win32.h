@@ -16,6 +16,10 @@ int vm_release(uintptr_t address, uint64_t size);
 void *vm_alloc_private(uintptr_t address, uint64_t size, int prot);
 /* Protection (PROT_* bits) of mapped memory in [address, address+size). */
 int vm_protect(uintptr_t address, uint64_t size, int prot);
-/* Fault handler: 1 when the access can be retried (the range was being mapped again). */
+/* Fault handler, before anything else: 1 after waiting for a mapping change at address to finish
+ * (its pages were missing for a moment), to retry the access. */
+int runtime_memory_transition_wait(uintptr_t address);
+/* Fault handler, last: 1 when the access can be retried (a mapping change, or the page became
+ * accessible meanwhile). */
 int runtime_memory_fault_retry(uintptr_t address, int write);
 #endif

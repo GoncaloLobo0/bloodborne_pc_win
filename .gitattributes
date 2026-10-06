@@ -1,0 +1,5 @@
+# Line endings stay as committed on every platform (Git for Windows defaults to CRLF);
+# cmd.exe scripts need CRLF.
+* -text
+*.cmd text eol=crlf
+*.bat text eol=crlf

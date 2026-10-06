@@ -11,7 +11,6 @@
 #include <string.h>
 #include <pthread.h>
 #include <time.h>
-#ifndef _WIN32
 #include <dirent.h>
 #include <errno.h>
 #include <ftw.h>
@@ -135,7 +134,11 @@ static int read_param(const char *meta, Param *p) {
     return n==1 ? 0 : -1;
 }
 static int remove_entry(const char *path, const struct stat *st, int flag, struct FTW *ftw) {
-    (void)st; (void)flag; (void)ftw; return remove(path);
+    (void)st; (void)flag; (void)ftw;
+#ifdef _WIN32
+    if (flag==FTW_DP) return rmdir(path); /* remove() deletes files only */
+#endif
+    return remove(path);
 }
 
 static ABI int32_t save_initialize(const void *param) { (void)param; initialized=1; return 0; }
@@ -351,8 +354,3 @@ static const RuntimeExport exports[]={
 };
 uintptr_t runtime_savedata_resolve(const char *name) { return RUNTIME_LOOKUP(exports,name); }
 void runtime_savedata_report(void) { printf("Runtime: save data mounts=%zu, memory writes=%zu\n",mounts_done,memory_writes); }
-#else
-void runtime_savedata_configure(const char *title) { (void)title; }
-uintptr_t runtime_savedata_resolve(const char *name) { (void)name; return 0; }
-void runtime_savedata_report(void) {}
-#endif

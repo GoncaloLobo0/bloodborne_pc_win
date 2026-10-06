@@ -266,8 +266,12 @@ uintptr_t IOFile::GetFileMapping() {
     HANDLE mapping = nullptr;
 
     if (file_access_mode == FileAccessMode::ReadWrite) {
-        mapping = CreateFileMapping2(hfile, NULL, FILE_MAP_WRITE, PAGE_READWRITE, SEC_COMMIT, 0,
-                                     NULL, NULL, 0);
+        // bbport: looked up at run time (MinGW's kernel32 import library does not have it).
+        static const auto create_mapping2 = reinterpret_cast<decltype(&CreateFileMapping2)>(
+            reinterpret_cast<void*>(GetProcAddress(GetModuleHandleW(L"kernelbase.dll"), "CreateFileMapping2")));
+        mapping = create_mapping2 ? create_mapping2(hfile, NULL, FILE_MAP_WRITE, PAGE_READWRITE, SEC_COMMIT, 0,
+                                                    NULL, NULL, 0)
+                                  : nullptr;
     } else {
         mapping = hfile;
     }

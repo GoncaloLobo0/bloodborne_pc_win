@@ -38,6 +38,9 @@
 #include <system_error>
 #include <vector>
 #include <vk_mem_alloc.h>
+#ifdef MemoryBarrier
+#undef MemoryBarrier // windows.h (vk_platform.h): a macro, not vk::MemoryBarrier
+#endif
 
 namespace Vulkan {
 

@@ -31,7 +31,33 @@ from patches import external_patches  # noqa: E402
 # Packaged (AppImage): generated files, saves and bbport.ini live in BB_DATA_DIR.
 PACKAGED = bool(os.environ.get("BB_PREBUILT"))
 DATA_DIR = Path(os.environ.get("BB_DATA_DIR", PORT_DIR))
-CONFIG_DIR = Path(os.environ.get("XDG_CONFIG_HOME", Path.home() / ".config")) / "bbport-launcher"
+WINDOWS = os.name == "nt"
+if WINDOWS:
+    # Windows (windows/launcher.cmd): the launcher's settings stay with the port, as its other data.
+    CONFIG_DIR = Path(os.environ.get("BB_LAUNCHER_CONFIG_DIR", DATA_DIR / "launcher-settings"))
+else:
+    CONFIG_DIR = Path(os.environ.get("XDG_CONFIG_HOME", Path.home() / ".config")) / "bbport-launcher"
+EXE = ".exe" if WINDOWS else ""
+
+
+def bash():
+    """The shell that runs run.sh. On Windows a bare "bash" is System32's WSL launcher: MSYS2's
+    bash (the port's private toolchain, or the one on PATH) instead."""
+    if not WINDOWS:
+        return "bash"
+    private = PORT_DIR / ".toolchain/msys64/usr/bin/bash.exe"
+    if private.is_file():
+        return str(private)
+    for directory in os.environ.get("PATH", "").split(os.pathsep):
+        candidate = Path(directory) / "bash.exe"
+        if candidate.is_file() and "system32" not in str(candidate).lower():
+            return str(candidate)
+    return "bash"
+
+
+def host_path(path):
+    """Paths for run.sh: forward slashes on Windows (MSYS2 bash and Python both take them)."""
+    return Path(path).as_posix() if WINDOWS else str(path)
 CONFIG_FILE = CONFIG_DIR / "settings.json"
 MAX_LOG_LINES = 5000
 
@@ -177,14 +203,14 @@ def patches_dir(settings):
 def game_environment(s):
     """Environment for run.sh from the launcher settings."""
     env = dict(os.environ)
-    env["BB_GAME_DIR"] = str(Path(s["game_dir"]).expanduser())
+    env["BB_GAME_DIR"] = host_path(Path(s["game_dir"]).expanduser())
     if s["user_dir"]:
-        env["BB_USER_DIR"] = s["user_dir"]
-    env["BB_MODS_DIR"] = str(Path(s.get("mods_dir") or DATA_DIR / "mods").expanduser())
-    env["BB_MODS_CONFIG"] = str(DATA_DIR / "mods.json")
+        env["BB_USER_DIR"] = host_path(s["user_dir"])
+    env["BB_MODS_DIR"] = host_path(Path(s.get("mods_dir") or DATA_DIR / "mods").expanduser())
+    env["BB_MODS_CONFIG"] = host_path(DATA_DIR / "mods.json")
     env["BB_MODS_ENABLED"] = "1" if s.get("mods_enabled", True) else "0"
-    env["BB_PATCHES_DIR"] = str(patches_dir(s))
-    env["BB_PATCHES_CONFIG"] = str(DATA_DIR / "patches.json")
+    env["BB_PATCHES_DIR"] = host_path(patches_dir(s))
+    env["BB_PATCHES_CONFIG"] = host_path(DATA_DIR / "patches.json")
     env["BB_LANGUAGE"] = s["language"]
     env["BB_FULLSCREEN"] = "1" if s["fullscreen"] else "0"
     env["BB_PRESENT_MODE"] = s["present_mode"]
@@ -294,7 +320,7 @@ CONTROLS = [
 
 def connected_gamepads():
     """(GUID, name) of the connected gamepads (bb-gpu-capabilities --gamepads), [] if unknown."""
-    tool = PORT_DIR / ("bin" if PACKAGED else "out") / "bb-gpu-capabilities"
+    tool = PORT_DIR / ("bin" if PACKAGED else "out") / ("bb-gpu-capabilities" + EXE)
     try:
         run = subprocess.run([str(tool), "--gamepads"], capture_output=True, text=True, timeout=5)
     except (OSError, subprocess.SubprocessError):
@@ -736,7 +762,7 @@ class LauncherWindow(Adw.ApplicationWindow):
         self.store()
 
     def assign_control(self, kind, name):
-        tool = PORT_DIR / ("bin" if PACKAGED else "out") / "bb-gpu-capabilities"
+        tool = PORT_DIR / ("bin" if PACKAGED else "out") / ("bb-gpu-capabilities" + EXE)
         try:
             process = Gio.Subprocess.new([str(tool), "--read-input", kind],
                                          Gio.SubprocessFlags.STDOUT_PIPE)
@@ -967,8 +993,12 @@ class LauncherWindow(Adw.ApplicationWindow):
         launcher.set_environ([f"{k}={v}" for k, v in self.environment().items()])
         launcher.set_cwd(str(PORT_DIR))
         try:
-            # setsid: the game and its helpers form one process group, stopped together.
-            self.process = launcher.spawnv(["setsid", "bash", str(PORT_DIR / "run.sh")])
+            if WINDOWS:
+                # Stopped with its process tree (stop_game).
+                self.process = launcher.spawnv([bash(), "run.sh"])
+            else:
+                # setsid: the game and its helpers form one process group, stopped together.
+                self.process = launcher.spawnv(["setsid", "bash", str(PORT_DIR / "run.sh")])
         except GLib.Error as error:
             self.toasts.add_toast(Adw.Toast(title=tr("Не удалось запустить: {}").format(error.message)))
             return
@@ -995,6 +1025,10 @@ class LauncherWindow(Adw.ApplicationWindow):
         if not self.process:
             return
         pid = int(self.process.get_identifier())
+        if WINDOWS:
+            # run.sh's bash and the game below it: the whole tree.
+            subprocess.run(["taskkill", "/T", "/F", "/PID", str(pid)], capture_output=True)
+            return
         try:
             os.killpg(pid, signal.SIGTERM)
         except OSError:
@@ -1044,6 +1078,8 @@ def play():
         print("bbport: choose the game folder in the launcher first", file=sys.stderr)
         return 1
     os.chdir(PORT_DIR)
+    if WINDOWS:
+        return subprocess.call([bash(), "run.sh"], env=game_environment(settings))
     os.execvpe("bash", ["bash", str(PORT_DIR / "run.sh")], game_environment(settings))
 
 

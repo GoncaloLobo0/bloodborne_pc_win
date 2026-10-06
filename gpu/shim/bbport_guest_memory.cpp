@@ -6,6 +6,22 @@
 #include <cstdio>
 #include <cstdlib>
 #include <mutex>
+#include "video_core/renderer_vulkan/vk_instance.h"
+#ifdef _WIN32
+// bbport (Windows): guest direct memory in GPU-visible dma-buf chunks (BB_GUEST_GPU_MEMORY,
+// BB_GUEST_IN_PLACE) needs Linux dma-buf; direct memory stays in the runtime's section here.
+namespace BbGuestMemory {
+bool Usable(const Vulkan::Instance&) {
+    return false;
+}
+void Install(const Vulkan::Instance&) {
+    std::printf("Guest memory: direct memory stays in system memory (no GPU-visible chunks on Windows)\n");
+}
+const Chunk* Find(std::uint64_t) {
+    return nullptr;
+}
+} // namespace BbGuestMemory
+#else
 #include <sys/mman.h>
 #include <unistd.h>
 #include "video_core/renderer_vulkan/vk_instance.h"
@@ -214,3 +230,4 @@ const Chunk* Find(std::uint64_t phys) {
     return chunks[index];
 }
 } // namespace BbGuestMemory
+#endif // _WIN32

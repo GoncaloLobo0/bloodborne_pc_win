@@ -2,6 +2,7 @@
 from paths import ROOT
 import importlib.util
 import json
+import os
 from pathlib import Path
 import tempfile
 import unittest
@@ -11,6 +12,7 @@ vulkan = importlib.util.module_from_spec(spec)
 spec.loader.exec_module(vulkan)
 
 
+@unittest.skipIf(os.name == "nt", "AppImage driver discovery (Linux)")
 class PackagedVulkanTests(unittest.TestCase):
     def setUp(self):
         self.tmp = tempfile.TemporaryDirectory()

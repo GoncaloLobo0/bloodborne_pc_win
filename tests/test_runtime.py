@@ -1,9 +1,9 @@
-from paths import ROOT
+from paths import ROOT, EXE_SUFFIX
 from pathlib import Path
 import subprocess
 import unittest
 
-EXE = ROOT / 'out/runtime-test'
+EXE = ROOT / ('out/runtime-test' + EXE_SUFFIX)
 
 
 @unittest.skipUnless(EXE.exists(), 'run bash build.sh --test first')

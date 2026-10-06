@@ -49,7 +49,9 @@ find_package(VulkanMemoryAllocator CONFIG REQUIRED)
 find_package(PkgConfig REQUIRED)
 pkg_check_modules(XXHASH REQUIRED IMPORTED_TARGET libxxhash)
 pkg_check_modules(SDL3 REQUIRED IMPORTED_TARGET sdl3)
-pkg_check_modules(X11 REQUIRED IMPORTED_TARGET x11)
+if (NOT WIN32)
+    pkg_check_modules(X11 REQUIRED IMPORTED_TARGET x11)
+endif()
 find_package(miniz REQUIRED)
 find_package(Zydis REQUIRED)
 find_program(GLSLANG_COMPILER NAMES glslang glslangValidator REQUIRED)
@@ -113,10 +115,20 @@ set(COMMON
     shadps4/common/path_util.cpp shadps4/common/rdtsc.cpp shadps4/common/spin_lock.cpp shadps4/common/recursive_lock.cpp
     shadps4/common/string_util.cpp shadps4/common/thread.cpp shadps4/common/signal_context.cpp
     shim/common/logging/log.cpp)
+if (WIN32)
+    list(APPEND COMMON shadps4/common/ntapi.cpp)
+endif()
 file(GLOB AVPLAYER CONFIGURE_DEPENDS shadps4/core/libraries/avplayer/*.cpp)
 pkg_check_modules(FFMPEG REQUIRED IMPORTED_TARGET libavformat libavcodec libavutil libswscale libswresample)
 file(GLOB SHIM_SOURCES CONFIGURE_DEPENDS shim/*.cpp shim/*/*.cpp)
-add_library(bbgpu SHARED ${VIDEO_CORE} ${RECOMPILER} ${COMMON} ${SHIM_SOURCES}
+# bbport (Windows): a static library linked into bb-probe.exe. A DLL cannot leave the runtime_*
+# symbols undefined for the executable to provide, as the shared object does on Linux.
+if (WIN32)
+    set(BBGPU_KIND STATIC)
+else()
+    set(BBGPU_KIND SHARED)
+endif()
+add_library(bbgpu ${BBGPU_KIND} ${VIDEO_CORE} ${RECOMPILER} ${COMMON} ${SHIM_SOURCES}
     shadps4/core/libraries/gnmdriver/gnmdriver.cpp
     shadps4/core/libraries/videoout/driver.cpp shadps4/core/libraries/videoout/video_out.cpp
     shadps4/core/libraries/kernel/equeue.cpp ${AVPLAYER}
@@ -132,17 +144,31 @@ target_compile_definitions(bbgpu PRIVATE IMGUI_IMPL_VULKAN_NO_PROTOTYPES
     BB_FONT_PATH="${CMAKE_CURRENT_SOURCE_DIR}/third_party/fonts/DejaVuSans.ttf")
 set_source_files_properties(shim/bbport_overlay.cpp PROPERTIES
     OBJECT_DEPENDS ${CMAKE_CURRENT_SOURCE_DIR}/third_party/fonts/DejaVuSans.ttf)
-target_include_directories(bbgpu PRIVATE shim shadps4 ${SHADER_INCLUDE} third_party/gcn/include third_party/half/include)
+target_include_directories(bbgpu PRIVATE shim shadps4 ${SHADER_INCLUDE} third_party/gcn/include third_party/half/include ../src)
 target_compile_definitions(bbgpu PRIVATE BOOST_ASIO_STANDALONE NDEBUG)
 target_compile_options(bbgpu PRIVATE -Wno-deprecated-declarations -Wno-missing-field-initializers)
 # Loaded with bb-probe at startup (DT_NEEDED, never dlopen): thread_local access without a
 # TLS descriptor call (_dl_tlsdesc_return was ~2% of the draw recording thread).
-target_compile_options(bbgpu PRIVATE -ftls-model=initial-exec)
-# Runtime symbols (runtime_memory_*, runtime_process_*) resolve against bb-probe.
-target_link_options(bbgpu PRIVATE -Wl,--allow-shlib-undefined)
+if (NOT WIN32)
+    target_compile_options(bbgpu PRIVATE -ftls-model=initial-exec)
+    # Runtime symbols (runtime_memory_*, runtime_process_*) resolve against bb-probe.
+    target_link_options(bbgpu PRIVATE -Wl,--allow-shlib-undefined)
+else()
+    # POSIX headers the port's Linux code expects (src/compat/win32), ahead of the system's.
+    target_include_directories(bbgpu BEFORE PUBLIC ${CMAKE_CURRENT_SOURCE_DIR}/../src/compat/win32)
+    # Windows 10+ APIs (WaitOnAddress, placeholders); no min/max macros from windows.h.
+    # 64-bit off_t and file sizes in MinGW (32-bit by default).
+    target_compile_definitions(bbgpu PUBLIC _WIN32_WINNT=0x0A00 WINVER=0x0A00 NOMINMAX WIN32_LEAN_AND_MEAN
+        _FILE_OFFSET_BITS=64)
+endif()
 target_link_libraries(bbgpu PRIVATE ffx-vulkan::portable ffx-vulkan::fsr4-v07-vulkan)
+if (NOT WIN32)
+    target_link_libraries(bbgpu PUBLIC PkgConfig::X11)
+else()
+    target_link_libraries(bbgpu PUBLIC dl psapi bcrypt synchronization ws2_32 dbghelp)
+endif()
 target_link_libraries(bbgpu PUBLIC Vulkan::Headers fmt::fmt Boost::headers magic_enum::magic_enum
-    tsl::robin_map GPUOpen::VulkanMemoryAllocator PkgConfig::XXHASH PkgConfig::SDL3 PkgConfig::X11 PkgConfig::FFMPEG miniz::miniz Zydis::Zydis sirit)
+    tsl::robin_map GPUOpen::VulkanMemoryAllocator PkgConfig::XXHASH PkgConfig::SDL3 PkgConfig::FFMPEG miniz::miniz Zydis::Zydis sirit)
 
 # Explicit test targets; neither launches the game nor needs a Vulkan device.
 add_executable(motion-history-test EXCLUDE_FROM_ALL ../tests/test_motion_history.cpp)
@@ -187,3 +213,50 @@ add_executable(fsr4-bench EXCLUDE_FROM_ALL tools/fsr4_bench.cpp
     shadps4/video_core/renderer_vulkan/fsr411/fsr411.cpp)
 target_include_directories(fsr4-bench PRIVATE shadps4/video_core/renderer_vulkan/fsr411)
 target_link_libraries(fsr4-bench PRIVATE ffx-vulkan::fsr4-v07-vulkan ffx-vulkan::fsr4-v07-assets Vulkan::Vulkan)
+
+# bbport (Windows): the loader and runtime (build.sh builds them with the C compiler on Linux)
+# are linked here with the static GPU library: bb-probe.exe, its GPU check tool and the tests.
+if (WIN32)
+    set(BB_ROOT ${CMAKE_CURRENT_SOURCE_DIR}/..)
+    file(GLOB ATRAC9_SOURCES CONFIGURE_DEPENDS ${BB_ROOT}/third_party/LibAtrac9/C/src/*.c)
+    add_library(atrac9 STATIC ${ATRAC9_SOURCES})
+    set_target_properties(atrac9 PROPERTIES C_STANDARD 99 INTERPROCEDURAL_OPTIMIZATION OFF)
+    target_compile_options(atrac9 PRIVATE -w)
+    file(GLOB RUNTIME_SOURCES CONFIGURE_DEPENDS ${BB_ROOT}/src/runtime*.c)
+    add_library(bbruntime STATIC ${RUNTIME_SOURCES} ${BB_ROOT}/src/compat/win32/compat.c)
+    target_include_directories(bbruntime PUBLIC ${BB_ROOT} ${BB_ROOT}/src)
+    # localtime_r and gmtime_r from MinGW time.h.
+    target_compile_definitions(bbruntime PUBLIC _POSIX_THREAD_SAFE_FUNCTIONS=200112L)
+    target_link_libraries(bbruntime PUBLIC bbgpu atrac9 pthread)
+    set(BB_C_WARNINGS -Wall -Wextra -Werror)
+    set_target_properties(bbruntime PROPERTIES C_STANDARD 11 C_EXTENSIONS ON)
+    target_compile_options(bbruntime PRIVATE ${BB_C_WARNINGS})
+    add_executable(bb-probe ${BB_ROOT}/src/probe.c ${BB_ROOT}/src/vulkan_smoke.c)
+    set_target_properties(bb-probe PROPERTIES C_STANDARD 11 C_EXTENSIONS ON
+        RUNTIME_OUTPUT_DIRECTORY ${BB_ROOT}/out)
+    target_compile_options(bb-probe PRIVATE ${BB_C_WARNINGS})
+    # The game packs host pointers (heap, stacks, thread handles) into 40 bits: no ASLR for the
+    # executable, so the heap and thread stacks stay at low addresses. The game's main thread
+    # runs on the executable's main thread stack (8 MiB on the PS4).
+    set(BB_EXE_LINK -Wl,--disable-dynamicbase,--disable-high-entropy-va "SHELL:-Xlinker --stack -Xlinker 16777216,16777216")
+    target_link_options(bb-probe PRIVATE ${BB_EXE_LINK})
+    # All of bbruntime and bbgpu is linked, as with the shared library on Linux: guest imports
+    # resolve by name at run time, and static initializers must not be dropped.
+    target_link_libraries(bb-probe PRIVATE "$<LINK_LIBRARY:WHOLE_ARCHIVE,bbruntime,bbgpu>")
+    # Runtime tests (build.sh --test on Linux): ninja -C out/gpu runtime-test sema-test content-test
+    foreach(TEST_NAME runtime sema)
+        add_executable(${TEST_NAME}-test EXCLUDE_FROM_ALL ${BB_ROOT}/tests/test_${TEST_NAME}.c)
+        set_target_properties(${TEST_NAME}-test PROPERTIES C_STANDARD 11 C_EXTENSIONS ON
+            RUNTIME_OUTPUT_DIRECTORY ${BB_ROOT}/out)
+        target_compile_options(${TEST_NAME}-test PRIVATE ${BB_C_WARNINGS} -UNDEBUG)
+        target_link_options(${TEST_NAME}-test PRIVATE ${BB_EXE_LINK})
+        target_link_libraries(${TEST_NAME}-test PRIVATE "$<LINK_LIBRARY:WHOLE_ARCHIVE,bbruntime,bbgpu>")
+    endforeach()
+    add_executable(content-test EXCLUDE_FROM_ALL ${BB_ROOT}/tests/test_content.c ${BB_ROOT}/src/runtime_content.c)
+    set_target_properties(content-test PROPERTIES C_STANDARD 11 C_EXTENSIONS ON RUNTIME_OUTPUT_DIRECTORY ${BB_ROOT}/out)
+    target_include_directories(content-test PRIVATE ${BB_ROOT} ${BB_ROOT}/src ${BB_ROOT}/src/compat/win32)
+    target_compile_options(content-test PRIVATE ${BB_C_WARNINGS} -UNDEBUG)
+    add_executable(bb-gpu-capabilities ${BB_ROOT}/tools/gpu_capabilities.c)
+    set_target_properties(bb-gpu-capabilities PROPERTIES C_STANDARD 11 RUNTIME_OUTPUT_DIRECTORY ${BB_ROOT}/out)
+    target_link_libraries(bb-gpu-capabilities PRIVATE Vulkan::Vulkan PkgConfig::SDL3)
+endif()

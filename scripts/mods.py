@@ -15,6 +15,67 @@ GAME_FOLDERS = {'action', 'chr', 'event', 'facegen', 'font', 'map', 'menu', 'mov
                 'sound'}
 
 
+# Windows creates symbolic links only for administrators or in Developer Mode. Without that,
+# directories are linked as NTFS junctions and files as hard links (copies across drives);
+# the links made that way are remembered here (link -> target).
+_fallback_links = {}
+
+
+def _key(path):
+    return os.path.normcase(os.path.abspath(path))
+
+
+def make_link(link, target):
+    target = Path(target)
+    try:
+        link.symlink_to(target, target_is_directory=target.is_dir())
+        return
+    except OSError:
+        if os.name != 'nt':
+            raise
+    if target.is_dir():
+        import _winapi
+        _winapi.CreateJunction(str(target), str(link))
+    else:
+        try:
+            os.link(target, link)
+        except OSError:
+            shutil.copyfile(target, link)
+    _fallback_links[_key(link)] = target
+
+
+def is_link(path):
+    path = Path(path)
+    return (path.is_symlink() or _key(path) in _fallback_links
+            or (os.name == 'nt' and path.is_junction()))
+
+
+def link_target(path):
+    return _fallback_links.get(_key(path)) or Path(path).resolve(strict=True)
+
+
+def remove_link(path):
+    path = Path(path)
+    _fallback_links.pop(_key(path), None)
+    if os.name == 'nt' and path.is_junction():
+        os.rmdir(path)  # the junction, not its target
+    else:
+        path.unlink()
+
+
+def remove_overlay(path):
+    """Deletes a merged view: its links, never what they point to."""
+    path = Path(path)
+    for entry in path.iterdir():
+        if is_link(entry):
+            remove_link(entry)
+        elif entry.is_dir():
+            remove_overlay(entry)
+        else:
+            entry.unlink()
+    path.rmdir()
+
+
 def child(folder, name):
     """`name` inside `folder`, matching an existing entry case-insensitively (mods made on
     Windows often differ from the game's lower-case names)."""
@@ -85,7 +146,7 @@ def mod_files(folder):
     for directory, folders, files in os.walk(root, followlinks=False):
         directory = Path(directory)
         for name in [*folders, *files]:
-            if (directory / name).is_symlink():
+            if (directory / name).is_symlink() or (os.name == 'nt' and (directory / name).is_junction()):
                 raise ValueError(f'Mod symlinks are unsupported: {directory / name}')
         for name in sorted(files):
             source = directory / name
@@ -103,14 +164,14 @@ def mod_files(folder):
 
 def expand(directory):
     """Materialize one directory level; never write through a directory link."""
-    if directory.is_symlink():
-        target = directory.resolve(strict=True)
+    if is_link(directory):
+        target = link_target(directory)
         if not target.is_dir():
             raise ValueError(f'File/directory conflict at {directory.name}')
-        directory.unlink()
+        remove_link(directory)
         directory.mkdir()
         for entry in target.iterdir():
-            (directory / entry.name).symlink_to(entry, target_is_directory=entry.is_dir())
+            make_link(directory / entry.name, entry)
     elif directory.exists() and not directory.is_dir():
         raise ValueError(f'File/directory conflict at {directory.name}')
     else:
@@ -138,7 +199,7 @@ def build_overlay(game, out, mods):
     overlay = Path(tempfile.mkdtemp(prefix='mod-game-', dir=out))
     try:
         for entry in game.iterdir():
-            (overlay / entry.name).symlink_to(entry, target_is_directory=entry.is_dir())
+            make_link(overlay / entry.name, entry)
         replaced = added = 0
         for relative, source in replacements:
             # Each component takes the game's spelling when it exists in another case.
@@ -147,22 +208,29 @@ def build_overlay(game, out, mods):
                 parent = child(parent, part)
                 expand(parent)
             destination = child(parent, relative.parts[-1])
-            if destination.is_symlink():
-                replaced += destination.resolve().is_relative_to(game)
-                destination.unlink()
+            if is_link(destination):
+                replaced += link_target(destination).is_relative_to(game)
+                remove_link(destination)
             elif destination.exists():
                 raise ValueError(f'File/directory conflict: {relative}')
             else:
                 added += 1
-            destination.symlink_to(source)
+            make_link(destination, source)
         print(f'Mods: {replaced} game files replaced, {added} added', file=sys.stderr)
         return overlay
     except BaseException:
-        shutil.rmtree(overlay)
+        remove_overlay(overlay)
         raise
 
 
 def main():
+    if sys.argv[1:2] == ['--remove']:
+        # run.sh: the merged view of a launch, when the game ends.
+        view = Path(sys.argv[2])
+        if not view.name.startswith('mod-game-'):
+            raise ValueError(f'not a merged view: {view}')
+        remove_overlay(view)
+        return
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument('game', type=Path)
     parser.add_argument('--out', required=True, type=Path)

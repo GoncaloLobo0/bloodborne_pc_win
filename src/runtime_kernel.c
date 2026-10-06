@@ -7,22 +7,26 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
-#ifndef _WIN32
 #include <errno.h>
 #include <pthread.h>
 #include <sched.h>
 #include <time.h>
 #include <unistd.h>
-#include <sys/syscall.h>
 #include <dlfcn.h>
 #include <dirent.h>
 #include <ucontext.h>
 #include <signal.h>
 #include <sys/uio.h>
-#include <sys/random.h>
 #include <sys/resource.h>
 #include <sys/time.h>
 #include <x86intrin.h>
+#ifdef _WIN32
+#include <windows.h>
+#include <bcrypt.h>
+#else
+#include <sys/syscall.h>
+#include <sys/random.h>
+#endif
 #define ERR(n) ((int32_t)(UINT32_C(0x80020000)|(n)))
 #define PAGE 16384
 
@@ -139,8 +143,13 @@ static ABI int32_t kernel_nanosleep(const GuestTimespec *rq,GuestTimespec *rem) 
 typedef struct { int32_t minuteswest, dsttime; } GuestTimezone;
 static ABI int32_t kernel_gettimezone(GuestTimezone *tz) {
     if (!tz) return ERR(22);
-    time_t now=time(NULL); struct tm local; localtime_r(&now,&local);
+    time_t now=time(NULL);
+#ifdef _WIN32
+    tz->minuteswest=(int32_t)(-bb_utc_offset(now)/60); tz->dsttime=0;
+#else
+    struct tm local; localtime_r(&now,&local);
     tz->minuteswest=(int32_t)(-local.tm_gmtoff/60); tz->dsttime=0;
+#endif
     return 0;
 }
 static ABI int32_t posix_gettimeofday(GuestTimeval *tv,GuestTimezone *tz) {
@@ -212,7 +221,11 @@ static ABI int32_t guest_sysctl(const int32_t *name,uint32_t namelen,void *old,u
     if (!name || namelen<2 || new_value) return fail_posix(EINVAL);
     if (name[0]==1 && name[1]==37) { /* kern.arandom */
         if (!old || !oldlen) return fail_posix(EINVAL);
+#ifdef _WIN32
+        if (BCryptGenRandom(NULL,old,(ULONG)*oldlen,BCRYPT_USE_SYSTEM_PREFERRED_RNG)) return fail_posix(EIO);
+#else
         if (getrandom(old,(size_t)*oldlen,0)<0) return fail_posix(errno);
+#endif
         return 0;
     }
     if (name[0]==6 && (name[1]==7 || name[1]==3)) { /* hw.pagesize / hw.ncpu */
@@ -313,11 +326,6 @@ static const RuntimeExport exports[]={
     {"pthread_setspecific",posix_key_set}, {"pthread_getspecific",key_get},
 };
 uintptr_t runtime_kernel_resolve(const char *name) { return RUNTIME_LOOKUP(exports,name); }
-#else
-uintptr_t runtime_kernel_resolve(const char *name) { (void)name; return 0; }
-int32_t runtime_guest_errno(int e) { return e ? 5 : 0; }
-void runtime_thread_keys_cleanup(void) {}
-#endif
 
 static void sample_start(void);
 static void sample_report(void);
@@ -335,7 +343,13 @@ static void guest_call_sites(uint64_t out[3]) {
     static _Thread_local uintptr_t stack_hi;
     if (!stack_hi) {
         pthread_attr_t attr; void *base=NULL; size_t size=0;
+#ifdef _WIN32
+        uintptr_t low=0, high=0;
+        bb_thread_stack(&low,&high);
+        (void)attr; base=(void *)low; size=high-low;
+#else
         if (!pthread_getattr_np(pthread_self(),&attr)) { pthread_attr_getstack(&attr,&base,&size); pthread_attr_destroy(&attr); }
+#endif
         stack_hi=(uintptr_t)base+size;
     }
     const uintptr_t *sp=(const uintptr_t *)__builtin_frame_address(0);
@@ -347,7 +361,11 @@ void runtime_wait_note(int kind, uint64_t ns) {
     static int enabled=-1;
     if (enabled<0) enabled=getenv("BB_FRAME_STATS")!=NULL;
     if (!enabled) return;
+#ifdef _WIN32
+    if (!wait_tid) wait_tid=gettid();
+#else
     if (!wait_tid) wait_tid=(int)syscall(SYS_gettid);
+#endif
     uint64_t sites[3];
     guest_call_sites(sites);
     const uint64_t key=((sites[0]<<20)^(sites[1]*0x9E3779B1ull)^(sites[2]<<7)^((uint64_t)wait_tid<<4)^(uint64_t)kind)|1;
@@ -355,7 +373,11 @@ void runtime_wait_note(int kind, uint64_t ns) {
         WaitSite *w=&wait_sites[(slot+i)%512];
         uint64_t expected=0;
         if (atomic_load(&w->key)==key || atomic_compare_exchange_strong(&w->key,&expected,key)) {
+#ifdef _WIN32
+            if (!w->tid) { w->site=sites[0]; w->site2=sites[1]; w->site3=sites[2]; w->kind=kind; bb_get_thread_name(w->name,sizeof(w->name)); w->tid=wait_tid; }
+#else
             if (!w->tid) { w->site=sites[0]; w->site2=sites[1]; w->site3=sites[2]; w->kind=kind; pthread_getname_np(pthread_self(),w->name,sizeof(w->name)); w->tid=wait_tid; }
+#endif
             atomic_fetch_add(&w->count,1); atomic_fetch_add(&w->ns,ns);
             return;
         }
@@ -392,6 +414,15 @@ void runtime_wait_report(double frames) {
 /* bbport BB_SAMPLE_THREAD=<name> (with frame stats): where that thread runs, sampled with SIGPROF
  * every 0.5 ms; reported with the wait profile. A thread that never blocks but waits for the GPU
  * shows up spinning in its polling loop. */
+#ifdef _WIN32
+/* BB_SAMPLE_THREAD needs SIGPROF and /proc: not available on Windows. */
+static void sample_start(void) {
+    static int warned;
+    const char *name=getenv("BB_SAMPLE_THREAD");
+    if (name && *name && !warned++) puts("Runtime: BB_SAMPLE_THREAD is not available on Windows");
+}
+static void sample_report(void) {}
+#else
 static _Atomic uint64_t sample_keys[1024], sample_counts[1024];
 static uint64_t sample_rips[1024], sample_callers[1024];
 static _Atomic uint64_t samples_total;
@@ -493,5 +524,6 @@ static void sample_report(void) {
     }
     printf("\n");
 }
+#endif
 /* The first three return addresses into the game's code on the calling thread's stack. */
 void runtime_guest_call_sites(uint64_t out[3]) { guest_call_sites(out); }

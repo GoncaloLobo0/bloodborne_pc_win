@@ -1,6 +1,14 @@
 #!/usr/bin/env bash
 set -euo pipefail
 cd -- "$(dirname -- "$0")"
+run_args=("$@")
+# Windows (MSYS2 bash, windows/play.cmd): Python's output with '\n' line ends (windows/python), and
+# no exec into the game (status 75 from it: restart, as runtime_restart's exec on Linux).
+windows=0
+if [[ $OSTYPE == msys* || $OSTYPE == cygwin* ]]; then
+    windows=1
+    export PYTHONPATH="$(cygpath -w "$PWD/windows/python")${PYTHONPATH:+;$PYTHONPATH}"
+fi
 if [[ ${1:-} == --software ]]; then
     shift
     if [[ -z ${VK_DRIVER_FILES:-} ]]; then
@@ -57,7 +65,13 @@ game=$("$PYTHON" scripts/mods.py "$game" --out "$out" \
     --mods-dir "${BB_MODS_DIR:-$data/mods}" --config "${BB_MODS_CONFIG:-$data/mods.json}" \
     --enabled "${BB_MODS_ENABLED:-1}")
 # A private merged view lasts for this launch, including restarts. Cleanup only our own view.
-if [[ $game != "$(realpath "$original_game")" ]]; then
+if (( windows )); then
+    # Python prints Windows paths (F:\...): the same directory, not necessarily the same spelling.
+    if ! [[ $(cygpath -u "$game") -ef $original_game ]]; then
+        mod_game=$game
+        trap '"$PYTHON" scripts/mods.py --remove "$mod_game"' EXIT
+    fi
+elif [[ $game != "$(realpath "$original_game")" ]]; then
     mod_game=$game
     trap '"$PYTHON" -c '\''import shutil,sys; shutil.rmtree(sys.argv[1])'\'' "$mod_game"' EXIT
 fi
@@ -90,6 +104,7 @@ if [[ -n ${scaled_output:-} ]]; then
     # Bash builtins only: the AppImage's PATH has no sed/grep (a missing one ended run.sh silently).
     if [[ -z $live && -f $BB_CONFIG ]]; then
         while IFS= read -r line || [[ -n $line ]]; do
+            line=${line%$'\r'} # written with Windows line ends
             [[ $line =~ ^live_resolution=([01]|auto)$ ]] && live=${BASH_REMATCH[1]}
         done < "$BB_CONFIG"
     fi
@@ -164,6 +179,17 @@ else
     probe=out/bb-probe
 fi
 probe_args=("$out/boot-linked.bin" --content-profile "$out/content.bin" --patches "$out/patches.bin" --app0 "$game" --user "${BB_USER_DIR:-$data/user}" --timeout "${BB_TIMEOUT:-0}" "$@")
+if (( windows )); then
+    status=0
+    "$probe" "${probe_args[@]}" || status=$?
+    if (( status == 75 )); then
+        # The in-game settings menu asked for a restart: the merged view goes first (the trap does
+        # not run across exec).
+        if [[ -n ${mod_game:-} ]]; then "$PYTHON" scripts/mods.py --remove "$mod_game"; trap - EXIT; fi
+        exec bash run.sh "${run_args[@]}"
+    fi
+    exit "$status"
+fi
 if [[ -n ${mod_game:-} ]]; then
     "$probe" "${probe_args[@]}" &
     mod_pid=$!

@@ -1,12 +1,12 @@
 """Boundary tests for the native loader; uses tiny synthetic x86-64 images."""
-from paths import ROOT
+from paths import ROOT, EXE_SUFFIX
 from pathlib import Path
 import struct
 import subprocess
 import tempfile
 import unittest
 
-EXE = ROOT / 'out/bb-probe'
+EXE = ROOT / ('out/bb-probe' + EXE_SUFFIX)
 
 
 def package(code, relocs=(), names=(), capabilities=None):
@@ -58,6 +58,24 @@ class LoaderTests(unittest.TestCase):
         r = self.run_image(package(b'\xff\x25\x02\0\0\0\x90\x90', [(8, 1, 0, 0)], ['fixture-import']))
         self.assertEqual(r.returncode, 20, r.stderr)
         self.assertIn('first unsupported PS4 import: fixture-import', r.stdout)
+
+    def test_guest_thread_pointer(self):
+        # The linker's `mov rax, gs:[0]` (link_modules.py) reads the guest TCB, whose first word
+        # points to itself; the loader retargets it on Windows (a TEB slot). Then the terminal
+        # import with rdi = that word, or ud2 when it is not the TCB.
+        code = (b'\x65\x48\x8b\x04\x25\0\0\0\0'  # mov rax, gs:[0]
+                b'\x48\x8b\x38'                  # mov rdi, [rax]
+                b'\x48\x39\xc7'                  # cmp rdi, rax
+                b'\x75\x06'                      # jne ud2
+                b'\xff\x25\x11\0\0\0'            # jmp [rip+0x11] (slot 40: after-native)
+                b'\x0f\x0b')                     # ud2
+        data = bytearray(native_package())
+        start = len(data) - 12288
+        data[start:start + len(code)] = code
+        r = self.run_image(bytes(data))
+        self.assertEqual(r.returncode, 20, r.stdout + r.stderr)
+        self.assertIn('first unsupported PS4 import: after-native', r.stdout)
+        self.assertNotIn('first argument: 0x0\n', r.stdout)
 
     def test_native_initializer_and_export_return(self):
         r=self.run_image(native_package())

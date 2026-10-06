@@ -245,6 +245,15 @@ static void StartProfileWriter() {
 }
 #endif
 
+#ifdef _WIN32
+namespace Common::NtApi { void Initialize(); }
+// bbport (Windows): the ntdll entry points shadPS4's common code calls, before anything runs.
+[[maybe_unused]] static const bool g_ntapi_ready = [] {
+    Common::NtApi::Initialize();
+    return true;
+}();
+#endif
+
 extern "C" int bbgpu_init(const BbGpuConfig* config) {
     BbSettings::Load();
 #ifdef BB_PGO_GENERATE

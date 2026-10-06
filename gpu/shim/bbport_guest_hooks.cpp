@@ -10,6 +10,15 @@
 #include <cstdlib>
 #include <cstdio>
 #include <cstring>
+#ifdef _WIN32
+// bbport (Windows): the hooks patch int3 into the game's code and handle SIGTRAP; they serve the
+// in-place memory model (BB_GUEST_IN_PLACE), which is not available on Windows.
+namespace BbGuestHooks {
+void Install(RangeCallback) {
+    std::printf("Guest hooks: not available on Windows\n");
+}
+} // namespace BbGuestHooks
+#else
 #include <sys/mman.h>
 #include <sys/uio.h>
 #include <ucontext.h>
@@ -207,3 +216,4 @@ void Install(RangeCallback on_gpu_range_allocated) {
     }
 }
 } // namespace BbGuestHooks
+#endif // _WIN32

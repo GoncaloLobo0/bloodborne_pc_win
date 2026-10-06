@@ -102,9 +102,8 @@ static auto UserPaths = [] {
             user_dir = std::filesystem::path(getenv("HOME")) / ".local" / "share" / "shadPS4";
         }
 #elif _WIN32
-        TCHAR appdata[MAX_PATH] = {0};
-        SHGetFolderPath(NULL, CSIDL_APPDATA, NULL, 0, appdata);
-        user_dir = std::filesystem::path(appdata) / "shadPS4";
+        // bbport (Windows): the portable directory is created (below) instead of a folder in
+        // %APPDATA%: everything the port writes stays next to it.
 #endif
     }
 

@@ -39,10 +39,13 @@ class RestartResolutionTests(unittest.TestCase):
             python.chmod(0o755)
             probe = data / 'probe'
             probe.write_text(f'#!{sys.executable}\n' +
-                'import json, os\n'
+                'import json, os, sys\n'
                 'from pathlib import Path\n'
                 'config=Path(os.environ["BB_CONFIG"])\n'
-                'stage=int(os.environ.get("BB_TEST_STAGE", "0"))\n'
+                # The restart count: in the environment across exec, in a file across Windows'
+                # restarts (a new process started by run.sh).
+                'stage_file=config.parent/"stage"\n'
+                'stage=int(os.environ.get("BB_TEST_STAGE") or (stage_file.read_text() if stage_file.exists() else "0"))\n'
                 'with (config.parent/"environments").open("a") as f:\n'
                 '    f.write(json.dumps({key:os.environ.get(key) for key in '
                 '("BB_RENDER_RES", "BB_OUTPUT_RES", "BB_AUTO_RENDER_RES")})+"\\n")\n'
@@ -50,7 +53,9 @@ class RestartResolutionTests(unittest.TestCase):
                 '    config.write_text("upscaler=fsr3\\npreset=4\\noutput_res="+'
                 '("1280x720" if stage==0 else "1920x1080")+"\\n")\n'
                 '    os.environ["BB_TEST_STAGE"]=str(stage+1)\n'
-                '    os.execlp("bash", "bash", "run.sh")\n')
+                '    stage_file.write_text(str(stage+1))\n'
+                # Windows has no exec: status 75 asks run.sh to start again (probe.c).
+                + ('    sys.exit(75)\n' if os.name == 'nt' else '    os.execlp("bash", "bash", "run.sh")\n'))
             probe.chmod(0o755)
             env = dict(os.environ, BB_PREBUILT='1', BB_PROBE=str(probe), PYTHON=str(python),
                        BB_DATA_DIR=str(data), BB_CONFIG=str(config), BB_GAME_DIR=str(data))
@@ -95,6 +100,7 @@ class RestartResolutionTests(unittest.TestCase):
         self.assertEqual(self.run_restarts(ini_extra='live_resolution=auto\n', caps=0)[0]['BB_RENDER_RES'],
                          '854x480')
 
+    @unittest.skipIf(os.name == 'nt', 'the AppImage environment (symbolic links to its tools)')
     def test_live_resolution_without_sed_or_grep(self):
         # A missing sed ended run.sh (exit 127) before the game in the AppImage on NixOS.
         self.assertEqual(self.run_restarts(ini_extra='live_resolution=0\n', caps=1,

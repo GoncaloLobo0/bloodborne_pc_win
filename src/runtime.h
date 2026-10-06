@@ -3,12 +3,19 @@
 #include <time.h>
 #include <stdint.h>
 #include <stddef.h>
+#include "bb_platform.h"
 #ifndef _WIN32
 #include <setjmp.h>
+#endif
 /* Recovery point for speculative guest memory reads on this thread (probe.c fault handler). */
 extern __thread sigjmp_buf *runtime_fault_recover;
 /* Restarts the game (in-game settings menu, render resolution change). */
 void runtime_restart(void);
+#ifdef _WIN32
+/* Reserves the guest address range and creates guest memory: first thing in main. */
+void runtime_memory_init(void);
+/* gs-relative offset of the slot that holds the guest TCB (runtime_thread.c). */
+uint32_t runtime_thread_tls_offset(void);
 #endif
 #define ABI __attribute__((sysv_abi))
 typedef void (ABI *GuestCallback)(void);

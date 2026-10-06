@@ -856,10 +856,25 @@ void Rasterizer::PostDraw(const Pipeline* pipeline, const PreparedDraw* used_pre
     }
     std::array<u16, AmdGpu::RegDirty::NumBlocks> blocks;
     u32 num_blocks = 0;
+#ifdef __GLIBCXX__
     for (size_t block = dirty.blocks._Find_first(); block < dirty.blocks.size();
          block = dirty.blocks._Find_next(block)) {
         blocks[num_blocks++] = static_cast<u16>(block);
     }
+#else
+    // bbport (libc++ has no _Find_first): the bitset's words, lowest bit first.
+    std::array<u64, sizeof(dirty.blocks) / sizeof(u64)> words;
+    static_assert(sizeof(words) == sizeof(dirty.blocks));
+    std::memcpy(words.data(), &dirty.blocks, sizeof(words));
+    for (size_t w = 0; w < words.size(); ++w) {
+        for (u64 bits = words[w]; bits != 0; bits &= bits - 1) {
+            const size_t block = w * 64 + static_cast<size_t>(std::countr_zero(bits));
+            if (block < dirty.blocks.size()) {
+                blocks[num_blocks++] = static_cast<u16>(block);
+            }
+        }
+    }
+#endif
     const auto stages =
         pipeline ? pipeline->GetStages() : std::span<const Shader::Info* const>{};
     // Constants: copied here into the ring, the recording thread only binds them.

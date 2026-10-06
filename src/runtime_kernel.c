@@ -117,11 +117,31 @@ static _Atomic uint64_t sleep_calls, sleep_total_ns;
 void runtime_sleep_stats(uint64_t *calls, uint64_t *ns) {
     *calls=atomic_exchange(&sleep_calls,0); *ns=atomic_exchange(&sleep_total_ns,0);
 }
+#ifdef _WIN32
+/* The game polls GPU labels with short sleeps: a high-resolution waitable timer per thread
+ * (Windows 10 1803+) instead of Sleep's millisecond ticks; very short waits only yield. */
+static void host_sleep(uint64_t ns) {
+    static _Thread_local HANDLE timer;
+    if (ns < 20000) { SwitchToThread(); return; }
+    if (!timer) {
+        timer=CreateWaitableTimerExW(NULL,NULL,CREATE_WAITABLE_TIMER_HIGH_RESOLUTION,TIMER_ALL_ACCESS);
+        if (!timer) timer=CreateWaitableTimerExW(NULL,NULL,0,TIMER_ALL_ACCESS);
+    }
+    LARGE_INTEGER due={.QuadPart=-(LONGLONG)(ns/100)};
+    if (timer && SetWaitableTimer(timer,&due,0,NULL,NULL,FALSE)) WaitForSingleObject(timer,INFINITE);
+    else Sleep((DWORD)((ns+999999)/1000000));
+}
+#endif
 static int sleep_ns(uint64_t ns) {
     struct timespec t={.tv_sec=(time_t)(ns/1000000000),.tv_nsec=(long)(ns%1000000000)}, a, b;
     clock_gettime(CLOCK_MONOTONIC,&a);
     int result=0;
+#ifdef _WIN32
+    (void)t;
+    host_sleep(ns);
+#else
     while (nanosleep(&t,&t)) if (errno!=EINTR) { result=errno; break; }
+#endif
     clock_gettime(CLOCK_MONOTONIC,&b);
     atomic_fetch_add(&sleep_calls,1);
     atomic_fetch_add(&sleep_total_ns,(uint64_t)((b.tv_sec-a.tv_sec)*1000000000+(b.tv_nsec-a.tv_nsec)));

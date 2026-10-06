@@ -13,6 +13,7 @@
 #ifdef _WIN32
 #include <windows.h>
 #include <dlfcn.h>
+#include <timeapi.h>
 #include <ucontext.h> /* src/compat/win32: the layout the GPU library's fault handlers read */
 #include "runtime_memory_win32.h"
 #else
@@ -463,6 +464,9 @@ int main(int argc, char **argv) {
     AddVectoredExceptionHandler(1, vectored_handler);
     SetUnhandledExceptionFilter(unhandled_filter);
     SetErrorMode(SEM_FAILCRITICALERRORS | SEM_NOGPFAULTERRORBOX);
+    /* 1 ms timer ticks: the vblank thread, condition variable timeouts and sleeps of the game and
+     * the GPU library would otherwise round to the default 15.6 ms. */
+    timeBeginPeriod(1);
 #endif
 #ifndef _WIN32
     /* Keep host heap objects handed to the guest (thread handles, TLS) in the

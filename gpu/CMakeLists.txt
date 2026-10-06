@@ -165,7 +165,7 @@ target_link_libraries(bbgpu PRIVATE ffx-vulkan::portable ffx-vulkan::fsr4-v07-vu
 if (NOT WIN32)
     target_link_libraries(bbgpu PUBLIC PkgConfig::X11)
 else()
-    target_link_libraries(bbgpu PUBLIC dl psapi bcrypt synchronization ws2_32 dbghelp)
+    target_link_libraries(bbgpu PUBLIC dl psapi bcrypt synchronization ws2_32 dbghelp winmm)
 endif()
 target_link_libraries(bbgpu PUBLIC Vulkan::Headers fmt::fmt Boost::headers magic_enum::magic_enum
     tsl::robin_map GPUOpen::VulkanMemoryAllocator PkgConfig::XXHASH PkgConfig::SDL3 PkgConfig::FFMPEG miniz::miniz Zydis::Zydis sirit)
@@ -217,6 +217,7 @@ target_link_libraries(fsr4-bench PRIVATE ffx-vulkan::fsr4-v07-vulkan ffx-vulkan:
 # bbport (Windows): the loader and runtime (build.sh builds them with the C compiler on Linux)
 # are linked here with the static GPU library: bb-probe.exe, its GPU check tool and the tests.
 if (WIN32)
+    enable_language(RC)
     set(BB_ROOT ${CMAKE_CURRENT_SOURCE_DIR}/..)
     file(GLOB ATRAC9_SOURCES CONFIGURE_DEPENDS ${BB_ROOT}/third_party/LibAtrac9/C/src/*.c)
     add_library(atrac9 STATIC ${ATRAC9_SOURCES})
@@ -231,7 +232,7 @@ if (WIN32)
     set(BB_C_WARNINGS -Wall -Wextra -Werror)
     set_target_properties(bbruntime PROPERTIES C_STANDARD 11 C_EXTENSIONS ON)
     target_compile_options(bbruntime PRIVATE ${BB_C_WARNINGS})
-    add_executable(bb-probe ${BB_ROOT}/src/probe.c ${BB_ROOT}/src/vulkan_smoke.c)
+    add_executable(bb-probe ${BB_ROOT}/src/probe.c ${BB_ROOT}/src/vulkan_smoke.c ${BB_ROOT}/windows/bb-probe.rc)
     set_target_properties(bb-probe PROPERTIES C_STANDARD 11 C_EXTENSIONS ON
         RUNTIME_OUTPUT_DIRECTORY ${BB_ROOT}/out)
     target_compile_options(bb-probe PRIVATE ${BB_C_WARNINGS})

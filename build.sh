@@ -55,14 +55,14 @@ if (( windows )); then
         -DBB_LTO="${BB_LTO:-ON}" -DCMAKE_C_COMPILER=clang -DCMAKE_CXX_COMPILER=clang++ >/dev/null
     echo "Windows build: LTO ${BB_LTO:-ON}"
     targets=(bb-probe bb-gpu-capabilities)
-    if [[ ${1:-} == --test ]]; then targets+=(runtime-test sema-test memory-test content-test); fi
+    if [[ ${1:-} == --test ]]; then targets+=(runtime-test sema-test memory-test content-test file-mods-test pad-test); fi
     if ! ninja -C out/gpu "${targets[@]}" > out/gpu-build.log 2>&1; then
         grep -v '^\[' out/gpu-build.log | tail -40 >&2
         echo 'Build failed (full log: out/gpu-build.log)' >&2; exit 1
     fi
     echo "Built $PWD/out/bb-probe.exe"
     if [[ ${1:-} == --test ]]; then
-        out/runtime-test.exe && out/sema-test.exe && out/memory-test.exe && out/content-test.exe
+        out/runtime-test.exe && out/sema-test.exe && out/memory-test.exe && out/content-test.exe && out/file-mods-test.exe && out/pad-test.exe
     fi
     exit 0
 fi

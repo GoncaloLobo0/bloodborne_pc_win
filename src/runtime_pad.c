@@ -16,6 +16,9 @@
 #include <time.h>
 #include <SDL3/SDL.h>
 #include <sys/stat.h>
+#ifdef _WIN32
+#include <windows.h>
+#endif
 
 #define ERR_INVALID_ARG ((int32_t)0x80920001)
 #define ERR_INVALID_HANDLE ((int32_t)0x80920003)
@@ -320,12 +323,17 @@ static void read_inject(void) {
     uint64_t now=now_us();
     if (now-last_check<20000) return;
     last_check=now;
+#ifdef _WIN32
+    /* The write time to 100 ns (st_mtime has whole seconds here: rewrites within one would be
+     * missed). */
+    WIN32_FILE_ATTRIBUTE_DATA st;
+    if (!GetFileAttributesExA(path,GetFileExInfoStandard,&st)) return;
+    const uint64_t written=((uint64_t)st.ftLastWriteTime.dwHighDateTime<<32)|st.ftLastWriteTime.dwLowDateTime;
+    if ((uint64_t)mtime.tv_sec==written) return;
+    mtime.tv_sec=(time_t)written;
+#else
     struct stat st;
     if (stat(path,&st)!=0) return;
-#ifdef _WIN32
-    if (st.st_mtime==mtime.tv_sec) return;
-    mtime.tv_sec=st.st_mtime;
-#else
     if (st.st_mtim.tv_sec==mtime.tv_sec && st.st_mtim.tv_nsec==mtime.tv_nsec) return;
     mtime=st.st_mtim;
 #endif

@@ -2,6 +2,22 @@
 #include <assert.h>
 #include <unistd.h>
 #include "../src/runtime_pad.c"
+#ifdef _WIN32
+#include <windows.h>
+/* The templates below in the temporary folder (/tmp is a directory of the current drive here). */
+static int temp_file(char *name, size_t size) {
+    char base[MAX_PATH], file[MAX_PATH * 2];
+    const char *suffix = strrchr(name, '/');
+    if (!GetTempPathA(sizeof(base), base)) return -1;
+    snprintf(file, sizeof(file), "%s%s", base, suffix + 1);
+    if (strlen(file) >= size) return -1;
+    strcpy(name, file);
+    return mkstemp(name);
+}
+#define TEMP_FILE(name) temp_file(name, sizeof(name))
+#else
+#define TEMP_FILE(name) mkstemp(name)
+#endif
 
 static int capture;
 int bbgpu_overlay_captures_input(void) { return capture; }
@@ -19,14 +35,14 @@ static void inject(const char *path, const char *tokens) {
 }
 
 int main(void) {
-    char path[]="/tmp/bbport-pad-test-XXXXXX";
-    int fd=mkstemp(path);
+    char path[1024]="/tmp/bbport-pad-test-XXXXXX";
+    int fd=TEMP_FILE(path);
     assert(fd>=0);
     close(fd);
     setenv("BB_PAD_FILE",path,1);
     /* bbport.ini controls: buttons moved, a trigger as a button and a button as a trigger. */
-    char config[]="/tmp/bbport-pad-config-XXXXXX";
-    int config_fd=mkstemp(config);
+    char config[1024]="/tmp/bbport-pad-config-XXXXXX";
+    int config_fd=TEMP_FILE(config);
     assert(config_fd>=0);
     const char controls[]="upscaler=fsr3\npad.cross=b\npad.circle=a\npad.r2=rightshoulder\n"
                           "pad.r1=righttrigger\nkey.cross=X, Space\npad.bogus=a\n";

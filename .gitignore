@@ -30,3 +30,5 @@ patches.json
 /docs/ISSUE_ACTION_PLAN_*.md
 # Windows port: the private build environment (windows/setup.cmd)
 /.toolchain/
+# Game files kept next to the port (never committed)
+/roms/

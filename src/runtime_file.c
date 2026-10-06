@@ -429,7 +429,7 @@ static int64_t do_fstat(int fd,GuestStat *out) {
     if (!out) return -EFAULT;
     File *f=get(fd);
     if (!f) return -EBADF;
-    if (f->dir) { char path[1024]; int e=translate(f->path,path,sizeof(path)); return e ? -e : do_stat(f->path,out); }
+    if (f->dir) return do_stat(f->path,out); /* opened by guest path; no handle kept */
     BY_HANDLE_FILE_INFORMATION info;
     if (!GetFileInformationByHandle(f->handle,&info)) return -host_error(GetLastError());
     guest_stat(info.dwFileAttributes,((uint64_t)info.nFileSizeHigh<<32)|info.nFileSizeLow,info.ftLastAccessTime,

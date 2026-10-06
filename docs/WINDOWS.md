@@ -32,6 +32,20 @@ or without the launcher:
 windows\play.cmd D:\Games\CUSA03173
 ```
 
+### Game from backup packages (.pkg)
+
+Some PS4 dump tools write fake-signed backup packages instead of a folder. They are unpacked
+into the game folder with the update copied over it, and checked:
+
+```bat
+windows\install-pkg.cmd roms\game.pkg roms\update-1.09.pkg
+```
+
+The game ends up in `roms\CUSA03173` (a third argument chooses another destination; `roms\` is
+not tracked by Git). The extractor is shadPS4's (v0.7.0, `tools/pkg_extract`); it uses the
+public fake-package keys, so retail-encrypted packages from the PlayStation Store cannot be
+unpacked with it: dump the game installed on the console instead.
+
 `windows\setup.cmd` downloads MSYS2 into `.toolchain\msys64` and installs everything there
 (clang, CMake, SDL3, Vulkan loader, FFmpeg, GTK 4 for the launcher, …); libraries that MSYS2 does
 not ship are built from source into the same place. Nothing is installed system-wide and the

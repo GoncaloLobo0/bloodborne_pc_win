@@ -11,7 +11,7 @@ P=mingw-w64-clang-x86_64
 pacman -S --noconfirm --needed git make patch $P-toolchain $P-cmake $P-ninja $P-pkgconf $P-python \
     $P-sdl3 $P-vulkan-headers $P-vulkan-loader $P-boost $P-fmt $P-robin-map $P-xxhash \
     $P-glslang $P-spirv-cross $P-spirv-tools $P-spirv-headers $P-zydis $P-ffmpeg $P-dlfcn \
-    $P-gtk4 $P-libadwaita $P-python-gobject
+    $P-gtk4 $P-libadwaita $P-python-gobject $P-crypto++ $P-zlib
 src=.toolchain/src
 mkdir -p "$src"
 fetch() { # name url tag

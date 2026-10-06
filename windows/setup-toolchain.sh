@@ -35,5 +35,6 @@ for name in magic_enum xbyak miniz VulkanMemoryAllocator; do
     touch "$src/$name.installed"
     echo "Installed $name into $MINGW_PREFIX"
 done
-git submodule update --init --recursive
+# LF line ends whatever core.autocrlf says (the patches in gpu/patches apply to LF files).
+git -c core.autocrlf=false submodule update --init --recursive
 echo 'Toolchain ready.'

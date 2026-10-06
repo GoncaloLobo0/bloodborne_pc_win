@@ -43,7 +43,19 @@ mkdir -p pgo
 # Submodules (git clone --recursive, or: git submodule update --init) and this port's changes
 # to FSR-Vulkan (gpu/patches/fsr-vulkan), applied to its working tree once.
 if [[ ! -f gpu/third_party/fsr-vulkan/CMakeLists.txt || ! -f gpu/third_party/imgui/imgui.h ]]; then
-    git submodule update --init --recursive
+    git -c core.autocrlf=false submodule update --init --recursive
+fi
+# Windows: Git for Windows checks submodules out with CRLF line ends by default (core.autocrlf),
+# which the patches do not apply to; such a submodule is checked out again with LF ones (its
+# local changes are the patches, applied again below).
+if (( windows )); then
+    for module in gpu/third_party/fsr-vulkan gpu/third_party/imgui third_party/LibAtrac9; do
+        if [[ $(git -C "$module" config core.autocrlf) != false ]]; then
+            git -C "$module" config core.autocrlf false
+            git -C "$module" rm -rq --cached .
+            git -C "$module" reset -q --hard
+        fi
+    done
 fi
 for patch in gpu/patches/fsr-vulkan/*.patch; do
     if ! git -C gpu/third_party/fsr-vulkan apply --reverse --check "$PWD/$patch" 2>/dev/null; then

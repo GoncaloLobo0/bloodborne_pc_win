@@ -5,7 +5,7 @@ launcher and scripts, on Windows 10/11 x86-64 instead of Linux.
 
 > **Status: playable from the start; not yet played through.** With Bloodborne 1.09 (RX 6650 XT,
 > Windows 10 22H2) the intro movie, character creation and the first area (Iosefka's Clinic) run
-> at a steady 60 FPS with walking, camera and attacks (audio output checked by dumping it); the
+> at a steady 60 FPS with walking and the camera (audio output checked by dumping it); the
 > runtime, memory, file, pad and
 > Python test suites pass. Later areas have not been tested yet: please report problems with the
 > log (launcher: *Save the log and statistics to a file*).

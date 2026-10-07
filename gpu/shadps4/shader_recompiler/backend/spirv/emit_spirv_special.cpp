@@ -77,8 +77,16 @@ static void EmitVertexMotion(EmitContext& ctx) {
                                            ctx.push_data_block,
                                            ctx.ConstU32(PushData::MotionParamIndex));
     const Id param_index = ctx.OpLoad(u32_type, param_ptr);
+    // bbport (Windows): AMD's Windows driver compiles a uniform load from a constant 64-bit
+    // address plus a uniform offset as a 32-bit scalar load, dropping the high bits (the
+    // parameter load faulted at the address's low 32 bits: device lost on the first animated
+    // draw). The base goes through a select the compiler cannot fold (a vertex index is never
+    // ~0u), which keeps the full address.
+    const Id never = ctx.OpIEqual(ctx.U1[1], ctx.OpLoad(u32_type, ctx.vertex_index),
+                                  ctx.ConstU32(0xFFFFFFFFu));
     const auto address = [&](u64 base, Id index, u32 stride) {
-        return ctx.OpIAdd(ctx.U64, ctx.Constant(ctx.U64, base),
+        return ctx.OpIAdd(ctx.U64, ctx.OpSelect(ctx.U64, never, ctx.Constant(ctx.U64, u64{0}),
+                                                ctx.Constant(ctx.U64, base)),
                           ctx.OpIMul(ctx.U64, ctx.OpUConvert(ctx.U64, index),
                                      ctx.Constant(ctx.U64, u64(stride))));
     };

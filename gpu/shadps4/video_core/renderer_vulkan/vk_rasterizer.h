@@ -388,6 +388,9 @@ private:
     const Instance& instance;
     Scheduler& scheduler;
     Runtime& runtime;
+    /// bbport: before the pipeline cache, which loads cached shaders embedding its buffer
+    /// addresses (they are part of the cache profile).
+    std::unique_ptr<ObjectMotion> object_motion;
     VideoCore::PageManager page_manager;
     VideoCore::BufferCache buffer_cache;
     VideoCore::TextureCache texture_cache;
@@ -400,7 +403,6 @@ private:
     std::unique_ptr<CameraMotion> camera_motion; // bbport: motion vectors (docs/upscaler.md)
     std::unique_ptr<SceneTargets> scene_targets;
     bool scene_started = false;
-    std::unique_ptr<ObjectMotion> object_motion;
     bool motion_draw = false;
     u64 motion_geometry{};    ///< vertex-stream identity of the current direct draw
     bool gbuffer_draw = false;

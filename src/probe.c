@@ -202,12 +202,72 @@ static int fatal_code(DWORD code) {
 static __thread EXCEPTION_RECORD last_record;
 static __thread CONTEXT last_context;
 static __thread int has_last, retries;
+/* Diagnostic: BB_WATCH_ADDR=<hex>: a write fault (GPU write tracking) within 0x200 bytes of it
+ * is reported with the writing code, and after that instruction (single step) the value there. */
+static uintptr_t watch_addr;
+static __thread int watch_step;
+static void watch_report(const char *what, const CONTEXT *c, uintptr_t address) {
+    char where[256], line[512], thread[64] = "?";
+    bb_get_thread_name(thread, sizeof(thread));
+    describe(where, sizeof(where), (uintptr_t)c->Rip);
+    const uint32_t *v = (const uint32_t *)watch_addr;
+    snprintf(line, sizeof(line), "Watch: %s at %s, address %p, thread %s; value %08x %08x %08x %08x\n",
+             what, where, (void *)address, thread, v[0], v[1], v[2], v[3]);
+    write_err(line);
+    uintptr_t rbp = (uintptr_t)c->Rbp, frame[2];
+    for (int depth = 0; depth < 6 && rbp && read_quad(rbp, frame) && frame[0] > rbp; ++depth) {
+        describe(where, sizeof(where), frame[1]);
+        snprintf(line, sizeof(line), "  #%d %s\n", depth, where);
+        write_err(line);
+        rbp = frame[0];
+    }
+}
+/* BB_WATCH_ADDR: each guest thread gets an 8-byte write breakpoint there (debug register 0) when
+ * it starts, set by a helper thread (a thread cannot set its own debug registers reliably). */
+static DWORD WINAPI watch_arm(void *target) {
+    HANDLE thread = (HANDLE)target;
+    if (SuspendThread(thread) == (DWORD)-1) return 1;
+    CONTEXT c = {.ContextFlags = CONTEXT_DEBUG_REGISTERS};
+    if (GetThreadContext(thread, &c)) {
+        c.Dr0 = watch_addr;
+        c.Dr7 = 1u | (1u << 16) | (2u << 18);
+        SetThreadContext(thread, &c);
+    }
+    ResumeThread(thread);
+    return 0;
+}
+void bb_watch_thread_start(void) {
+    if (!watch_addr) return;
+    HANDLE self;
+    DuplicateHandle(GetCurrentProcess(), GetCurrentThread(), GetCurrentProcess(), &self,
+                    THREAD_SUSPEND_RESUME | THREAD_GET_CONTEXT | THREAD_SET_CONTEXT, FALSE, 0);
+    HANDLE helper = CreateThread(NULL, 0, watch_arm, self, 0, NULL);
+    WaitForSingleObject(helper, INFINITE);
+    CloseHandle(helper);
+    CloseHandle(self);
+}
 static LONG CALLBACK vectored_handler(EXCEPTION_POINTERS *ep) {
     EXCEPTION_RECORD *r = ep->ExceptionRecord;
     CONTEXT *c = ep->ContextRecord;
+    if (r->ExceptionCode == EXCEPTION_SINGLE_STEP && watch_addr && (c->Dr6 & 1u)) {
+        c->Dr6 = 0;
+        watch_report("hw write", c, watch_addr);
+        return EXCEPTION_CONTINUE_EXECUTION;
+    }
+    if (r->ExceptionCode == EXCEPTION_SINGLE_STEP && watch_step) {
+        watch_step = 0;
+        c->EFlags &= ~0x100u;
+        watch_report("after write", c, watch_addr);
+        return EXCEPTION_CONTINUE_EXECUTION;
+    }
     if (r->ExceptionCode == EXCEPTION_ACCESS_VIOLATION && r->NumberParameters >= 2) {
         const uintptr_t address = (uintptr_t)r->ExceptionInformation[1];
         const int write = r->ExceptionInformation[0] == 1;
+        if (watch_addr && write && address - (watch_addr - 0x100) < 0x300) {
+            watch_report("write", c, address);
+            watch_step = 1;
+            c->EFlags |= 0x100u;
+        }
         /* A mapping being replaced there (no gap on Linux): the access waits for it. The GPU's
          * tracking must not see the page while its protection is being restored. */
         if (runtime_memory_transition_wait(address)) return EXCEPTION_CONTINUE_EXECUTION;
@@ -475,6 +535,7 @@ int main(int argc, char **argv) {
      * guest thread pointer. */
     runtime_memory_init();
     runtime_thread_tls_offset();
+    if (getenv("BB_WATCH_ADDR")) watch_addr = (uintptr_t)strtoull(getenv("BB_WATCH_ADDR"), NULL, 16);
     AddVectoredExceptionHandler(1, vectored_handler);
     SetUnhandledExceptionFilter(unhandled_filter);
     SetErrorMode(SEM_FAILCRITICALERRORS | SEM_NOGPFAULTERRORBOX);
@@ -723,6 +784,9 @@ int main(int argc, char **argv) {
         }
     }
     printf("Entering original x86-64 code at guest offset 0x%" PRIx64 "\n", entry);
+#ifdef _WIN32
+    bb_watch_thread_start();
+#endif
     entered_game=1;
     struct { uint64_t argc; const char *argv[2]; } params = {1, {"/app0/eboot.bin", NULL}};
 #ifdef _WIN32

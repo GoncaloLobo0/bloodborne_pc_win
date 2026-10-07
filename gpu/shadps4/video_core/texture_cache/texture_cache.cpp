@@ -1,10 +1,15 @@
 // SPDX-FileCopyrightText: Copyright 2024-2026 shadPS4 Emulator Project
 // SPDX-License-Identifier: GPL-2.0-or-later
 
+#include <cstdio>
+#include <cstdlib>
+#include <format>
+#include <magic_enum/magic_enum.hpp>
 #include <xxhash.h>
 
 #include "bbport_toggles.h"
 #include "bbport_free_check.h"
+#include "bbport_write_log.h"
 #include "common/assert.h"
 #include "common/debug.h"
 #include "common/div_ceil.h"
@@ -732,9 +737,104 @@ ImageId TextureCache::FindImageFromRange(VAddr address, size_t size, bool ensure
     return {};
 }
 
+// bbport diagnostic: BB_DUMP_IMAGE=<hex guest address> BB_DUMP_IMAGE_TRIGGER=<file>: when the
+// file exists (it is deleted) and a draw samples an image at that address, every cached image
+// there is described and written to BB_DUMP_DIR (default out/dump) as img_<id>_<w>x<h>_<bits>.raw.
+void TextureCache::DebugDumpSampled(ImageId sampled_id) {
+    // Comma-separated addresses; the trigger arms each of them once.
+    static std::vector<VAddr> addresses = [] {
+        std::vector<VAddr> list;
+        for (const char* p = std::getenv("BB_DUMP_IMAGE"); p && *p;) {
+            char* end{};
+            list.push_back(VAddr(std::strtoull(p, &end, 16)));
+            p = *end == ',' ? end + 1 : end;
+            if (end == p && *p != '\0') {
+                break;
+            }
+        }
+        return list;
+    }();
+    static const char* trigger = std::getenv("BB_DUMP_IMAGE_TRIGGER");
+    static std::vector<VAddr> armed;
+    if (addresses.empty() || !trigger) {
+        return;
+    }
+    if (std::remove(trigger) == 0) {
+        armed = addresses;
+    }
+    const VAddr address = slot_images[sampled_id].info.guest_address;
+    const auto it = std::ranges::find(armed, address);
+    if (it == armed.end()) {
+        return;
+    }
+    armed.erase(it);
+    static const std::string dir = [] {
+        const char* env = std::getenv("BB_DUMP_DIR");
+        return std::string{env && env[0] ? env : "out/dump"};
+    }();
+    ForEachImageInRegion(address, 1, [&](ImageId id, Image& image) {
+        const auto& info = image.info;
+        std::printf("Image dump: id %u%s at %#llx size %#llx %ux%u format %s bits %u tiled %d "
+                    "tile mode %d pitch %u flags %#x\n",
+                    id.index, id == sampled_id ? " (sampled)" : "",
+                    (unsigned long long)info.guest_address, (unsigned long long)info.guest_size,
+                    info.size.width, info.size.height,
+                    std::string(magic_enum::enum_name(info.pixel_format)).c_str(), info.num_bits,
+                    int(info.props.is_tiled), int(info.tile_mode), info.pitch, u32(image.flags));
+        if (info.guest_size <= 0x1000) {
+            // Small images: what the guest memory holds now, next to the GPU copy.
+            const auto* words = reinterpret_cast<const u32*>(info.guest_address);
+            std::printf("Image dump: guest memory %08x %08x %08x %08x\n", words[0], words[1],
+                        words[2], words[3]);
+            std::fflush(stdout);
+            BbWriteLog::DumpRange(info.guest_address, info.guest_size);
+        }
+        if (info.props.is_depth || info.num_bits % 8 != 0) {
+            return;
+        }
+        const u64 size = u64(info.size.width) * info.size.height * (info.num_bits / 8);
+        const auto download = runtime.GetStagingPool().Request(size, MemoryType::HostCached, 16, true);
+        const vk::BufferImageCopy copy = {
+            .bufferOffset = download.offset,
+            .bufferRowLength = info.size.width,
+            .bufferImageHeight = info.size.height,
+            .imageSubresource = {vk::ImageAspectFlagBits::eColor, 0, 0, 1},
+            .imageExtent = {info.size.width, info.size.height, 1},
+        };
+        runtime.DownloadImage(&image, download.buffer, std::span{&copy, 1});
+        const std::string path = std::format("{}/img_{}_{}x{}_{}.raw", dir, id.index,
+                                             info.size.width, info.size.height, info.num_bits);
+        scheduler.DeferPriorityOperation([this, download, size, path] {
+            download.Invalidate();
+            if (FILE* f = std::fopen(path.c_str(), "wb")) {
+                std::fwrite(download.mapped, 1, size, f);
+                std::fclose(f);
+                std::printf("Image dump: %s\n", path.c_str());
+            }
+            runtime.GetStagingPool().FreeDeferred(download);
+        });
+    });
+}
+
 ImageView& TextureCache::FindTexture(ImageId image_id, const ImageDesc& desc, ViewMemo* memo,
                                      bool refresh) {
+    DebugDumpSampled(image_id);
     Image& image = slot_images[image_id];
+    if (static const VAddr watch = [] {
+            const char* env = std::getenv("BB_WATCH_ADDR");
+            return env ? VAddr(std::strtoull(env, nullptr, 16)) : VAddr{0};
+        }();
+        watch && image.info.guest_address == watch) {
+        static int reports = 0;
+        if (reports++ < 4) {
+            const auto& m = desc.view_info.mapping;
+            std::printf("Watch: texture view %s swizzle %s %s %s %s, view format %s\n",
+                        std::string(magic_enum::enum_name(desc.type)).c_str(),
+                        vk::to_string(m.r).c_str(), vk::to_string(m.g).c_str(),
+                        vk::to_string(m.b).c_str(), vk::to_string(m.a).c_str(),
+                        vk::to_string(desc.view_info.format).c_str());
+        }
+    }
     if (desc.type == BindingType::Storage) {
         image.flags |= ImageFlagBits::GpuModified;
         if (readback_linear_images && (!image.info.props.is_tiled || image.info.size.width <= 8) &&

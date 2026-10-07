@@ -261,6 +261,7 @@ static void *host_start(void *p) {
     attach(t);
     set_host_name(t->name);
 #ifdef _WIN32
+    { extern void bb_watch_thread_start(void); bb_watch_thread_start(); }
     if (!bb_setjmp(t->exit_jump)) t->result=t->entry(t->argument);
 #else
     if (!setjmp(t->exit_jump)) t->result=t->entry(t->argument);

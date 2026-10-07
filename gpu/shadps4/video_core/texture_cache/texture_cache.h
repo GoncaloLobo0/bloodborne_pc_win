@@ -138,6 +138,8 @@ public:
     /// checked it beforehand; only a guest write racing with the draw can make it so).
     [[nodiscard]] ImageView& FindTexture(ImageId image_id, const ImageDesc& desc,
                                          ViewMemo* memo = nullptr, bool refresh = true);
+    /// bbport diagnostic (BB_DUMP_IMAGE): writes the images at a sampled address to files.
+    void DebugDumpSampled(ImageId sampled_id);
 
     /// Retrieves the render target with specified properties
     [[nodiscard]] ImageView& FindRenderTarget(ImageId image_id, const ImageDesc& desc);

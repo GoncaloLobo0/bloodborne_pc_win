@@ -868,6 +868,19 @@ void PrintBufferStats() {
 std::pair<const Buffer*, u64> BufferCache::ObtainBuffer(VAddr device_addr, u32 size,
                                                         bool is_written, bool is_texel_buffer) {
     BB_SECTION(ObtainBuffer);
+    // bbport diagnostic: BB_WATCH_ADDR=<hex>: written bindings that cover it (first 16).
+    static const VAddr watch = [] {
+        const char* env = std::getenv("BB_WATCH_ADDR");
+        return env ? VAddr(std::strtoull(env, nullptr, 16)) : VAddr{0};
+    }();
+    if (watch && device_addr <= watch && watch < device_addr + size) {
+        static std::atomic<int> reports{0};
+        if (reports.fetch_add(1, std::memory_order_relaxed) < 16) {
+            std::printf("Watch: %s buffer binding %#llx +%#x covers it%s\n",
+                        is_written ? "written" : "read", (unsigned long long)device_addr, size,
+                        is_texel_buffer ? " (texel)" : "");
+        }
+    }
     const bool stats = BufferStatsEnabled();
     if (stats) {
         PrintBufferStats();

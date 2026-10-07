@@ -36,6 +36,7 @@ struct Entry {
 
 // GPU thread only.
 std::vector<Entry> entries;
+int capture_index = 0; // files of one second stay apart
 std::vector<std::pair<Target, bool>> pending_sampled;
 std::vector<std::string> pending_buffers;
 
@@ -86,7 +87,8 @@ void AddShader(Entry& entry, u64 hash) {
 void Write(VAddr presented) {
     const char* dir = std::getenv("BB_CAPTURE_DIR");
     const std::string path =
-        std::format("{}/frame_{}.txt", dir ? dir : ".", static_cast<long long>(std::time(nullptr)));
+        std::format("{}/frame_{}_{:03}.txt", dir ? dir : ".", static_cast<long long>(std::time(nullptr)),
+                    capture_index++);
     FILE* f = std::fopen(path.c_str(), "w");
     if (!f) {
         std::printf("Frame capture: cannot write %s\n", path.c_str());

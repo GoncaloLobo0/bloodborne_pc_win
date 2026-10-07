@@ -3,11 +3,11 @@
 The Windows build of bbport: the same game code running natively on the CPU, the same renderer,
 launcher and scripts, on Windows 10/11 x86-64 instead of Linux.
 
-> **Status: boots and runs; not yet played through.** With Bloodborne 1.09 it starts, loads and
-> renders steadily at 60 FPS through the title screen (3-minute runs without input, RX 6650 XT,
-> Windows 10 22H2), and the runtime, memory, file, pad and Python test suites pass. Gameplay has
-> not been tested yet: please report problems with the log (launcher: *Save the log and
-> statistics to a file*).
+> **Status: playable from the start; not yet played through.** With Bloodborne 1.09 (RX 6650 XT,
+> Windows 10 22H2) the intro movie, character creation and the first area (Iosefka's Clinic) run
+> at a steady 60 FPS with sound, walking, camera and attacks; the runtime, memory, file, pad and
+> Python test suites pass. Later areas have not been tested yet: please report problems with the
+> log (launcher: *Save the log and statistics to a file*).
 
 ## Requirements
 
@@ -68,6 +68,9 @@ windows\msys.cmd bash tools/fetch_fsr4_assets.sh
 - **Not available:** `BB_UFFD` (userfaultfd), MangoHud (use another overlay), PGO builds, and
   the Linux-only diagnostics `BB_FREE_CHECK`, `BB_LABEL_TRAP`, `BB_SAMPLE_THREAD`,
   `BB_HEAP_SITES`; the AppImage is Linux only.
+- **AMD's Windows driver** compiles a load from a constant 64-bit address as a 32-bit one; the
+  object motion shaders (motion vectors for the upscaler) build their addresses so that it
+  cannot (the first in-game scene lost the GPU device otherwise).
 - **Present modes:** AMD's Windows driver has no Mailbox; it falls back to FIFO (vsync).
   Choose *Immediate* in the launcher for an uncapped frame rate without vsync.
 - **Mods:** the merged game view uses symbolic links when Windows allows them (Developer Mode),

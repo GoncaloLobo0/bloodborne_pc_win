@@ -12,6 +12,7 @@
 #endif
 #ifdef _WIN32
 #include <windows.h>
+#include <tlhelp32.h>
 #include <dlfcn.h>
 #include <timeapi.h>
 #include <ucontext.h> /* src/compat/win32: the layout the GPU library's fault handlers read */
@@ -236,6 +237,28 @@ static DWORD WINAPI watch_arm(void *target) {
     ResumeThread(thread);
     return 0;
 }
+/* BB_CAMSCAN "watchc": watch `address` on every thread of the process from now on (each is
+ * suspended while its debug registers are set; the calling thread is skipped). */
+void bb_watch_set_all(uintptr_t address) {
+    watch_addr = address;
+    const DWORD self = GetCurrentThreadId(), process = GetCurrentProcessId();
+    HANDLE snapshot = CreateToolhelp32Snapshot(TH32CS_SNAPTHREAD, 0);
+    if (snapshot == INVALID_HANDLE_VALUE) return;
+    THREADENTRY32 entry = {.dwSize = sizeof(entry)};
+    int armed = 0;
+    for (BOOL more = Thread32First(snapshot, &entry); more; more = Thread32Next(snapshot, &entry)) {
+        if (entry.th32OwnerProcessID != process || entry.th32ThreadID == self) continue;
+        HANDLE thread = OpenThread(THREAD_SUSPEND_RESUME | THREAD_GET_CONTEXT | THREAD_SET_CONTEXT,
+                                   FALSE, entry.th32ThreadID);
+        if (!thread) continue;
+        armed += watch_arm(thread) == 0;
+        CloseHandle(thread);
+    }
+    CloseHandle(snapshot);
+    char line[128];
+    snprintf(line, sizeof(line), "Watch: write breakpoint at %p on %d threads\n", (void *)address, armed);
+    write_err(line);
+}
 void bb_watch_thread_start(void) {
     if (!watch_addr) return;
     HANDLE self;
@@ -251,7 +274,15 @@ static LONG CALLBACK vectored_handler(EXCEPTION_POINTERS *ep) {
     CONTEXT *c = ep->ContextRecord;
     if (r->ExceptionCode == EXCEPTION_SINGLE_STEP && watch_addr && (c->Dr6 & 1u)) {
         c->Dr6 = 0;
-        watch_report("hw write", c, watch_addr);
+        /* Each writing instruction once (a per-frame value is written 60 times a second). */
+        static uintptr_t seen[32];
+        static volatile long seen_count;
+        int known = 0;
+        for (long i = 0; i < seen_count && i < 32; ++i) known |= seen[i] == (uintptr_t)c->Rip;
+        if (!known && seen_count < 32) {
+            seen[InterlockedIncrement(&seen_count) - 1] = (uintptr_t)c->Rip;
+            watch_report("hw write", c, watch_addr);
+        }
         return EXCEPTION_CONTINUE_EXECUTION;
     }
     if (r->ExceptionCode == EXCEPTION_SINGLE_STEP && watch_step) {
@@ -784,6 +815,10 @@ int main(int argc, char **argv) {
         }
     }
     runtime_discord_start();
+#ifdef _WIN32
+    runtime_watch_hook = bb_watch_set_all;
+#endif
+    runtime_camscan_start(image, round_page(size));
     printf("Entering original x86-64 code at guest offset 0x%" PRIx64 "\n", entry);
 #ifdef _WIN32
     if (watch_addr) {

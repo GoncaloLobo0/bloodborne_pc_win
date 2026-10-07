@@ -26,6 +26,9 @@ typedef void (ABI *GuestCallback)(void);
 void runtime_start(uint64_t capabilities);
 /* Discord Rich Presence ("Playing Bloodborne"), when Discord runs (runtime_discord.c). */
 void runtime_discord_start(void);
+/* Diagnostic: BB_CAMSCAN finds the camera angles in game memory (runtime_camscan.c). */
+void runtime_camscan_start(const void *image, size_t size);
+extern void (*runtime_watch_hook)(uintptr_t address);
 /* Called on each guest thread as it starts, when set (runtime_thread.c). */
 extern void (*runtime_thread_start_hook)(void);
 uintptr_t runtime_resolve(const char *name, int is_data);

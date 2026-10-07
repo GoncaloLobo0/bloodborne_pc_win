@@ -1,6 +1,8 @@
 // SPDX-License-Identifier: GPL-2.0-or-later
 #include "video_core/renderer_vulkan/vk_camera_motion.h"
 
+#include <algorithm>
+#include <atomic>
 #include <chrono>
 #include <cmath>
 #include <cstdio>
@@ -18,6 +20,26 @@
 #include "video_core/renderer_vulkan/vk_scheduler.h"
 #include "video_core/renderer_vulkan/vk_shader_util.h"
 #include "video_core/texture_cache/texture_cache.h"
+
+namespace {
+// bbport: the latest camera angles (radians) and their frame number, for bbgpu_camera_angles.
+std::atomic<float> camera_yaw{0.0f}, camera_pitch{0.0f};
+std::atomic<unsigned> camera_frame{0};
+void PublishCameraAngles(float yaw, float pitch) {
+    camera_yaw.store(yaw, std::memory_order_relaxed);
+    camera_pitch.store(pitch, std::memory_order_relaxed);
+    camera_frame.fetch_add(1, std::memory_order_release);
+}
+} // namespace
+
+/// bbport: the game camera's yaw and pitch (radians, from the view's z axis); returns how many
+/// frames have published them (0: no camera yet).
+extern "C" unsigned bbgpu_camera_angles(float* yaw, float* pitch) {
+    const unsigned frame = camera_frame.load(std::memory_order_acquire);
+    *yaw = camera_yaw.load(std::memory_order_relaxed);
+    *pitch = camera_pitch.load(std::memory_order_relaxed);
+    return frame;
+}
 
 namespace Vulkan {
 
@@ -290,6 +312,10 @@ void CameraMotion::OnConstants(const float* data) {
     if (own_inverse != BbToggle::Disabled(BbToggle::CameraOwnInverse)) {
         current.inv_view = computed_inverse;
     }
+    // bbport: the camera's yaw and pitch (radians) from the view's z axis, for the runtime
+    // (bbgpu_camera_angles: mouse look calibration).
+    PublishCameraAngles(std::atan2(current.view[8], current.view[10]),
+                        std::asin(std::clamp(current.view[9], -1.0f, 1.0f)));
     // bbport: BB_CAMERA_LOG=1 prints the camera position every 100 ms (scripted tests of how far
     // the player moves in a given time at different frame rates).
     static const bool camera_log = std::getenv("BB_CAMERA_LOG") != nullptr;

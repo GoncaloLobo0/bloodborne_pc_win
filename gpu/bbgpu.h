@@ -33,6 +33,8 @@ int bbgpu_overlay_captures_input(void);
 /* Mouse look while the mouse is captured (no gamepad): right stick 0..255 and SDL button bits
  * (1 left, 2 middle, 4 right). Returns 0 when it is not captured. */
 int bbgpu_mouse_look(int *right_x, int *right_y, unsigned *buttons);
+/* The game camera's yaw and pitch (radians); returns the number of frames published so far. */
+unsigned bbgpu_camera_angles(float *yaw, float *pitch);
 /* Number of symbols registered by the vendored libraries (diagnostics). */
 unsigned bbgpu_symbol_count(void);
 #ifdef __cplusplus

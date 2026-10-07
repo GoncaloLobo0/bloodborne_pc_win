@@ -216,9 +216,46 @@ void WindowSDL::UpdateCursor() {
 
 } // namespace Frontend
 
-// bbport: mouse look for the pad sampling. Returns 0 when the mouse is not captured. The right
-// stick follows the mouse's speed, measured over at least 8 ms (the game may read the pad more
-// than once a frame); a small offset carries slow movements past the game's dead zone.
+namespace {
+// The game's camera speed for a right stick deflection d (0..127), measured from the view
+// matrix (BB_CAMERA_LOG) with the stick held: nothing up to ~47, then 1.62 deg/s per step
+// (117.5 deg/s at 119); turning jumps to 260 deg/s from 122 up; tilting tops out near 120.
+constexpr float StickDeadZone = 46.7f;
+constexpr float DegreesPerStep = 1.62f;
+constexpr float LinearTopStep = 119.0f, LinearTopRate = (119.0f - 46.7f) * 1.62f;
+constexpr float BoostStep = 122.0f, BoostRate = 260.0f;
+
+/// The deflection (signed, -127..127) that turns the camera at `rate` deg/s on average.
+/// Fractions and turning rates between the linear top and the boost are spread over successive
+/// samples (`error` carries what was not given yet), so the average matches.
+int Deflection(float rate, bool boost, float& error) {
+    float magnitude = std::fabs(rate);
+    if (magnitude < 0.5f) {
+        error = 0.0f;
+        return 0;
+    }
+    float step;
+    if (magnitude <= LinearTopRate) {
+        step = StickDeadZone + magnitude / DegreesPerStep + error;
+        const float chosen = std::clamp(std::floor(step + 0.5f), StickDeadZone, LinearTopStep);
+        error = step - chosen;
+        step = chosen;
+    } else if (boost && magnitude < BoostRate) {
+        // Alternate between the linear top and the boost in the right proportion.
+        const float share = (magnitude - LinearTopRate) / (BoostRate - LinearTopRate) + error;
+        step = share >= 0.5f ? BoostStep : LinearTopStep;
+        error = share - (step == BoostStep ? 1.0f : 0.0f);
+    } else {
+        error = 0.0f;
+        step = 127.0f;
+    }
+    return int(std::copysign(step, rate));
+}
+} // namespace
+
+// bbport: mouse look for the pad sampling. Returns 0 when the mouse is not captured. The mouse's
+// speed (pixels/s, over at least 8 ms: the game may read the pad more than once a frame) times
+// the sensitivity is the camera speed wanted, turned into the deflection that gives it.
 extern "C" int bbgpu_mouse_look(int* right_x, int* right_y, unsigned* buttons) {
     using namespace Frontend;
     if (!mouse_active.load(std::memory_order_relaxed)) {
@@ -226,23 +263,19 @@ extern "C" int bbgpu_mouse_look(int* right_x, int* right_y, unsigned* buttons) {
     }
     static u64 last_ns = 0;
     static int stick_x = 128, stick_y = 128;
+    static float error_x = 0.0f, error_y = 0.0f;
     const u64 now = SDL_GetTicksNS();
     if (now - last_ns >= 8'000'000ull) {
-        const float seconds = last_ns ? float(now - last_ns) * 1e-9f : 0.016f;
+        const float seconds = std::min(last_ns ? float(now - last_ns) * 1e-9f : 0.016f, 0.1f);
         last_ns = now;
         const float dx = mouse_dx.exchange(0.0f, std::memory_order_relaxed);
         const float dy = mouse_dy.exchange(0.0f, std::memory_order_relaxed);
-        const float scale = 0.085f * BbSettings::Get().mouse_sensitivity.load();
-        const auto deflect = [&](float delta) {
-            const float v = delta / std::min(seconds, 0.1f) * scale; // pixels/s to stick units
-            if (std::fabs(v) < 0.5f) {
-                return 128;
-            }
-            const float out = std::copysign(std::min(24.0f + std::fabs(v), 127.0f), v);
-            return int(128.0f + out);
-        };
-        stick_x = std::clamp(deflect(dx), 0, 255);
-        stick_y = std::clamp(deflect(dy), 0, 255);
+        // Degrees per pixel of mouse motion at sensitivity 1 (800 DPI: ~5 cm per half turn).
+        const float degrees_per_pixel = 0.12f * BbSettings::Get().mouse_sensitivity.load();
+        stick_x = 128 + Deflection(dx / seconds * degrees_per_pixel, true, error_x);
+        stick_y = 128 + Deflection(dy / seconds * degrees_per_pixel, false, error_y);
+        stick_x = std::clamp(stick_x, 1, 255);
+        stick_y = std::clamp(stick_y, 1, 255);
     }
     *right_x = stick_x;
     *right_y = stick_y;

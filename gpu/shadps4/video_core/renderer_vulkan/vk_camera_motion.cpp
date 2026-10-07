@@ -299,11 +299,13 @@ void CameraMotion::OnConstants(const float* data) {
         static auto next = start;
         if (const auto now = Clock::now(); now >= next) {
             next = now + std::chrono::milliseconds(100);
+            // The view's third row: the camera's z axis in world space (yaw and pitch rates).
             std::printf("Camera: %.3f s at %.3f %.3f %.3f (inverse of view: %.3f %.3f %.3f, largest "
-                        "difference %.4f)\n",
+                        "difference %.4f) axis %.5f %.5f %.5f\n",
                         std::chrono::duration<double>(now - start).count(), game_inverse[3],
                         game_inverse[7], game_inverse[11], computed_inverse[3], computed_inverse[7],
-                        computed_inverse[11], inverse_gap);
+                        computed_inverse[11], inverse_gap, current.view[8], current.view[9],
+                        current.view[10]);
         }
     }
     current.proj = {data[52], data[57], data[62], data[63]};

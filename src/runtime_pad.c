@@ -71,9 +71,15 @@ static uint16_t touch_axis(float v, int max) {
     return (uint16_t)(v<=0.0f ? 0 : v>=1.0f ? max : (int)(v*max+0.5f));
 }
 static void touch_click(PadData *d, int right) {
+    /* A DualShock 4 numbers each new touch (0..127, wrapping); a press after a gap of more
+     * than 100 ms is a new finger. */
+    static uint64_t last_us; static uint8_t touch_id;
+    const uint64_t now=now_us();
+    if (now-last_us>100000) touch_id=(uint8_t)((touch_id+1)&0x7f);
+    last_us=now;
     d->buttons|=BTN_TOUCHPAD;
     d->touch_count=1;
-    d->touches[0]=(PadTouch){.x=right ? 1440 : 480,.y=471,.id=0};
+    d->touches[0]=(PadTouch){.x=right ? 1440 : 480,.y=471,.id=touch_id};
 }
 
 /* BB_GAMEPAD (the launcher's controller choice): its SDL GUID, or part of its name. Issue #15:

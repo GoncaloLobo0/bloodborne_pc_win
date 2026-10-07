@@ -786,7 +786,10 @@ int main(int argc, char **argv) {
     runtime_discord_start();
     printf("Entering original x86-64 code at guest offset 0x%" PRIx64 "\n", entry);
 #ifdef _WIN32
-    bb_watch_thread_start();
+    if (watch_addr) {
+        runtime_thread_start_hook = bb_watch_thread_start; /* the game's threads */
+        bb_watch_thread_start();                            /* and this one */
+    }
 #endif
     entered_game=1;
     struct { uint64_t argc; const char *argv[2]; } params = {1, {"/app0/eboot.bin", NULL}};

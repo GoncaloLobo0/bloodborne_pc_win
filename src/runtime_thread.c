@@ -256,12 +256,14 @@ static void set_host_name(const char *name) {
     pthread_setname_np(pthread_self(),host);
 #endif
 }
+/* Called on each guest thread as it starts (probe.c: BB_WATCH_ADDR breakpoints). */
+void (*runtime_thread_start_hook)(void);
 static void *host_start(void *p) {
     GuestThread *t=p;
     attach(t);
     set_host_name(t->name);
 #ifdef _WIN32
-    { extern void bb_watch_thread_start(void); bb_watch_thread_start(); }
+    if (runtime_thread_start_hook) runtime_thread_start_hook();
     if (!bb_setjmp(t->exit_jump)) t->result=t->entry(t->argument);
 #else
     if (!setjmp(t->exit_jump)) t->result=t->entry(t->argument);

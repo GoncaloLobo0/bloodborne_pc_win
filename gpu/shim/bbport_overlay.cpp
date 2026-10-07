@@ -386,6 +386,12 @@ void Menu() {
         }
     }
 
+    ImGui::SeparatorText("Mouse (without a controller)");
+    Checkbox("Mouse look", s.mouse_look);
+    Slider("Mouse sensitivity", s.mouse_sensitivity, 0.1f, 5.0f);
+    Hint("With no controller connected the mouse turns the camera; left button R1, right "
+         "button L1, middle button R3 (lock on). Esc frees the cursor, a click in the window "
+         "captures it again.");
     ImGui::SeparatorText("Other");
     Checkbox("FPS counter in the corner", s.show_fps);
 

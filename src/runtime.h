@@ -26,6 +26,8 @@ typedef void (ABI *GuestCallback)(void);
 void runtime_start(uint64_t capabilities);
 /* Discord Rich Presence ("Playing Bloodborne"), when Discord runs (runtime_discord.c). */
 void runtime_discord_start(void);
+/* Called on each guest thread as it starts, when set (runtime_thread.c). */
+extern void (*runtime_thread_start_hook)(void);
 uintptr_t runtime_resolve(const char *name, int is_data);
 void runtime_report(void);
 void runtime_finalize(void *dso);

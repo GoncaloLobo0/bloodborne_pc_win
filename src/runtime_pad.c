@@ -306,6 +306,16 @@ static void sample_host(PadData *d) {
     d->left_y=(uint8_t)(128-(key_down(k,IN_MOVE_UP) ? 128 : 0)+(key_down(k,IN_MOVE_DOWN) ? 127 : 0));
     d->right_x=(uint8_t)(128-(key_down(k,IN_LOOK_LEFT) ? 128 : 0)+(key_down(k,IN_LOOK_RIGHT) ? 127 : 0));
     d->right_y=(uint8_t)(128-(key_down(k,IN_LOOK_UP) ? 128 : 0)+(key_down(k,IN_LOOK_DOWN) ? 127 : 0));
+    /* Mouse look (gpu/shim/window.cpp): the mouse turns the camera unless the arrow keys do;
+     * left button R1, right L1, middle R3. */
+    int mouse_x, mouse_y; unsigned mouse_buttons;
+    if (bbgpu_mouse_look(&mouse_x,&mouse_y,&mouse_buttons)) {
+        if (d->right_x==128) d->right_x=(uint8_t)mouse_x;
+        if (d->right_y==128) d->right_y=(uint8_t)mouse_y;
+        if (mouse_buttons & 1u) d->buttons|=BTN_R1;
+        if (mouse_buttons & 4u) d->buttons|=BTN_L1;
+        if (mouse_buttons & 2u) d->buttons|=BTN_R3;
+    }
 }
 
 /* BB_PAD_FILE=<file>: scripted input for automated runs. The file holds whitespace-separated

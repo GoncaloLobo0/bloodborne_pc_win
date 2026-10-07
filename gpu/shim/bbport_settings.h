@@ -58,6 +58,9 @@ struct Values {
     /// 0.3's +y down (no difference while it only turns). The +y down error showed as FSR
     /// smearing and blur in motion (upstream #42, #47).
     std::atomic<bool> camera_y_up{true};
+    /// bbport: mouse look without a gamepad (the mouse turns the camera, buttons R1/L1/R3).
+    std::atomic<bool> mouse_look{true};
+    std::atomic<float> mouse_sensitivity{1.0f};
     std::atomic<float> reactive_scale{1.0f};
     std::atomic<float> reactive_threshold{0.2f};
     std::atomic<float> reactive_max{0.9f};

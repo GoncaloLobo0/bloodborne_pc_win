@@ -77,11 +77,17 @@ def validate_patch_requirements(names, game):
                              'or disable debug_menu in bbport.ini')
 
 
+# Effects off when bbport.ini does not mention them. Motion blur: the game's own drew a mirrored
+# copy of the scene and streaks over the sky (upstream issue #44).
+DEFAULT_OFF={'effect_motion_blur'}
+
+
 def effect_patches(settings):
     names=[]
     for key,(off,on) in EFFECTS.items():
-        if key not in settings: continue
-        name=on if settings[key]=='1' else off
+        value=settings.get(key,'0' if key in DEFAULT_OFF else None)
+        if value is None: continue
+        name=on if value=='1' else off
         if name: names.append(name)
     lod=MODEL_LOD.get(settings.get('model_lod','0'))
     if lod: names.append(lod)

@@ -5,10 +5,40 @@ THIS PROJECT IS NOT RELATED TO SHADPS4. ALL QUESTIONS RELATED TO THIS PROJECT SH
 
 **English** · [Русский](README.ru.md)
 
-> **Windows fork.** This branch also builds and runs on Windows 10/11 x86-64:
-> `windows\setup.cmd`, `windows\build.cmd`, then `windows\launcher.cmd`. See
-> [docs/WINDOWS.md](docs/WINDOWS.md) for what differs from Linux and how the port works.
-> It boots and runs Bloodborne 1.09 to the title screen; gameplay is not tested yet.
+## This repository: the Windows port
+
+This is a fork of [deadinside28/bloodborne_pc](https://github.com/deadinside28/bloodborne_pc)
+that also builds and runs on **Windows 10/11 (x86-64)**. It contains **source code only**: no
+game files, no keys, no prebuilt executables. You build it on your PC (a script downloads
+everything it needs into this folder) and play **your own copy** of Bloodborne.
+
+**Status: playable from the start, not played through.** Tested on Windows 10 with an AMD
+RX 6650 XT: the intro, character creation, the Hunter's Dream / Iosefka's Clinic and Central
+Yharnam run at a steady 60 FPS with a controller or the keyboard (mouse look is new). Other
+GPUs and later areas are untested — please report problems with the log.
+
+### Quick start (Windows)
+
+1. Install [Git for Windows](https://git-scm.com/download/win), then in a Command Prompt:
+   ```bat
+   git clone https://github.com/GoncaloLobo0/bloodborne_pc_win.git
+   cd bloodborne_pc_win
+   ```
+   (Use `git clone`; a "Download ZIP" copy lacks the submodules the build needs.)
+2. `windows\setup.cmd` — once: downloads a private build environment into `.toolchain\`
+   (~5 GB; takes a while). Nothing is installed system-wide.
+3. `windows\build.cmd` — builds `out\bb-probe.exe` (also after every update).
+4. **Your game.** You need your own dump of Bloodborne **CUSA03173 updated to 1.09**:
+   - a dumped game folder: copy it to `roms\CUSA03173` (with the 1.09 update copied over it), or
+   - backup packages (`.pkg`) from a dump tool: put them in `roms\` and run
+     `windows\install-pkg.cmd roms\<game>.pkg roms\<update-1.09>.pkg`.
+5. Play: `windows\play.cmd roms\CUSA03173` (or `windows\launcher.cmd` for the settings GUI).
+
+The full guide — controls, settings, troubleshooting, what changed for Windows — is
+**[docs/WINDOWS.md](docs/WINDOWS.md)**. The rest of this README is the upstream project's
+(Linux) documentation.
+
+---
 
 bbport is the counterpart of Wine + DXVK for a single game: *Bloodborne* for PlayStation 4
 (CUSA03173, game version 1.09) on an x86-64 Linux PC. The game's original executable runs

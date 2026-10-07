@@ -72,7 +72,7 @@ OUTPUT_RES = [("1280×720 (Steam Deck)", "1280x720"), ("1920×1080", "1920x1080"
 EFFECTS = [
     ("effect_chromatic_aberration", "Хроматическая аберрация", True),
     ("effect_dof", "Глубина резкости (DoF)", True),
-    ("effect_motion_blur", "Размытие в движении", True),
+    ("effect_motion_blur", "Размытие в движении", False),
     ("effect_ssao", "Затенение SSAO", True),
     ("effect_game_aa", "Собственное сглаживание игры", True),
     ("effect_dynamic_shadows", "Тени от динамических источников", True),

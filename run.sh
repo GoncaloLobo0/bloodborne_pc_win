@@ -188,6 +188,8 @@ if (( windows )); then
         if [[ -n ${mod_game:-} ]]; then "$PYTHON" scripts/mods.py --remove "$mod_game"; trap - EXIT; fi
         exec bash run.sh "${run_args[@]}"
     fi
+    # A process ended by Windows (fail-fast, stack overflow) prints nothing itself.
+    if (( status != 0 )); then printf 'bb-probe exited with status %d (%#x)\n' "$status" "$status"; fi
     exit "$status"
 fi
 if [[ -n ${mod_game:-} ]]; then

@@ -99,6 +99,17 @@ void TextureCache::ProcessDownloadImages() {
     std::unique_lock lk{download_images_mutex};
     downloads_queued.store(false, std::memory_order_relaxed);
     for (const ImageId image_id : download_images) {
+        if (static const bool log = std::getenv("BB_READBACK_LINEAR_LOG") != nullptr; log) {
+            static std::unordered_set<VAddr> seen;
+            const auto& info = slot_images[image_id].info;
+            if (seen.insert(info.guest_address).second) {
+                std::printf("Readback image %#llx %ux%u %s tiled %d\n",
+                            (unsigned long long)info.guest_address, info.size.width,
+                            info.size.height,
+                            std::string(magic_enum::enum_name(info.pixel_format)).c_str(),
+                            int(info.props.is_tiled));
+            }
+        }
         DownloadImageMemory(image_id, true);
     }
     download_images.clear();
@@ -182,11 +193,25 @@ void TextureCache::DownloadImageMemory(ImageId image_id, bool sync) {
     }
 }
 
+// The memory an image's MaybeCpuDirty check compares (RefreshImage): its first 8x8 pixels. The
+// image size should be less than a page to be considered MaybeCpuDirty, so this is uncommon and
+// fast.
+static u64 MaybeDirtyHash(const ImageInfo& info) {
+    const auto addr = std::bit_cast<u8*>(info.guest_address);
+    const u32 w = std::min(info.size.width, u32(8));
+    const u32 h = std::min(info.size.height, u32(8));
+    const u32 s_w = info.props.is_block ? Common::DivCeil(w, 4u) : w;
+    const u32 s_h = info.props.is_block ? Common::DivCeil(h, 4u) : h;
+    return XXH3_64bits(addr, s_w * s_h * (info.num_bits / 8));
+}
+
 void TextureCache::MarkAsMaybeDirty(ImageId image_id, Image& image) {
     if (image.hash == 0) {
-        // Initialize hash
-        const u8* addr = std::bit_cast<u8*>(image.info.guest_address);
-        image.hash = XXH3_64bits(addr, image.info.guest_size);
+        // bbport: the same range RefreshImage compares. A hash of the whole image here never
+        // matched it, so the first write anywhere on the page reuploaded the image from memory:
+        // a GPU-written image (the character creation preview's exposure, 1x1) got the zeros
+        // in memory back over its contents, and the preview stayed black.
+        image.hash = MaybeDirtyHash(image.info);
     }
     image.flags |= ImageFlagBits::MaybeCpuDirty;
     UntrackImage(image_id);
@@ -673,6 +698,27 @@ ImageId TextureCache::FindImage(ImageDesc& desc, bool exact_fmt) {
     }
     // Create and register a new image
     if (!image_id) {
+        if (static const VAddr watch = [] {
+                const char* env = std::getenv("BB_WATCH_ADDR");
+                return env ? VAddr(std::strtoull(env, nullptr, 16)) : VAddr{0};
+            }();
+            watch && info.guest_address == watch) {
+            const auto describe = [](const char* what, const ImageInfo& i) {
+                std::printf("Watch: %s %ux%u %s size %#llx pitch %u tile %d bits %u type %d "
+                            "levels %u layers %u\n",
+                            what, i.size.width, i.size.height,
+                            std::string(magic_enum::enum_name(i.pixel_format)).c_str(),
+                            (unsigned long long)i.guest_size, i.pitch, int(i.tile_mode),
+                            i.num_bits, int(i.type), i.resources.levels, i.resources.layers);
+            };
+            describe(desc.type == BindingType::RenderTarget ? "new render target"
+                     : desc.type == BindingType::Storage   ? "new storage image"
+                                                           : "new texture",
+                     info);
+            for (const auto& other : image_ids) {
+                describe("  overlapping existing", slot_images[other].info);
+            }
+        }
         image_id = slot_images.insert(instance, runtime, slot_image_views, info);
         RegisterImage(image_id);
     }
@@ -940,17 +986,7 @@ void TextureCache::RefreshImage(Image& image) {
 
     if (True(image.flags & ImageFlagBits::MaybeCpuDirty) &&
         False(image.flags & ImageFlagBits::CpuDirty)) {
-        // The image size should be less than page size to be considered MaybeCpuDirty
-        // So this calculation should be very uncommon and reasonably fast
-        // For now we'll just check up to 64 first pixels
-        const auto addr = std::bit_cast<u8*>(image.info.guest_address);
-        const u32 w = std::min(image.info.size.width, u32(8));
-        const u32 h = std::min(image.info.size.height, u32(8));
-
-        const u32 s_w = image.info.props.is_block ? Common::DivCeil(w, 4u) : w;
-        const u32 s_h = image.info.props.is_block ? Common::DivCeil(h, 4u) : h;
-        const u32 size = s_w * s_h * (image.info.num_bits / 8);
-        const u64 hash = XXH3_64bits(addr, size);
+        const u64 hash = MaybeDirtyHash(image.info);
         if (image.hash == hash) {
             image.flags &= ~ImageFlagBits::MaybeCpuDirty;
             return;
@@ -1002,6 +1038,18 @@ void TextureCache::RefreshImage(Image& image) {
     if (image_copies.empty()) {
         image.flags &= ~ImageFlagBits::Dirty;
         return;
+    }
+    if (static const VAddr watch = [] {
+            const char* env = std::getenv("BB_WATCH_ADDR");
+            return env ? VAddr(std::strtoull(env, nullptr, 16)) : VAddr{0};
+        }();
+        watch && image.info.guest_address == watch) {
+        static int reports = 0;
+        if (reports++ < 20) {
+            const auto* v = reinterpret_cast<const u32*>(image.info.guest_address);
+            std::printf("Watch: image upload from memory, flags %#x, memory %08x %08x\n",
+                        u32(image.flags), v[0], v[1]);
+        }
     }
 
     scheduler.EndRendering();

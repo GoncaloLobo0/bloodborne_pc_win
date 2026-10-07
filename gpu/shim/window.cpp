@@ -253,6 +253,20 @@ int Deflection(float rate, bool boost, float& error) {
 }
 } // namespace
 
+// bbport: mouse look through the game's camera update (runtime_camera_hook.c): the motion since
+// the last call, in radians (0.12 degrees per pixel at sensitivity 1), and the buttons.
+extern "C" int bbgpu_mouse_turn(float* yaw, float* pitch, unsigned* buttons) {
+    using namespace Frontend;
+    if (!mouse_active.load(std::memory_order_relaxed)) {
+        return 0;
+    }
+    const float radians_per_pixel = 0.0020944f * BbSettings::Get().mouse_sensitivity.load();
+    *yaw = mouse_dx.exchange(0.0f, std::memory_order_relaxed) * radians_per_pixel;
+    *pitch = mouse_dy.exchange(0.0f, std::memory_order_relaxed) * radians_per_pixel;
+    *buttons = mouse_buttons.load(std::memory_order_relaxed);
+    return 1;
+}
+
 // bbport: mouse look for the pad sampling. Returns 0 when the mouse is not captured. The mouse's
 // speed (pixels/s, over at least 8 ms: the game may read the pad more than once a frame) times
 // the sensitivity is the camera speed wanted, turned into the deflection that gives it.

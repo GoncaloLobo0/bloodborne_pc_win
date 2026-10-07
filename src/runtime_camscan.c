@@ -171,6 +171,30 @@ static void *camscan_thread(void *path) {
         float poke_delta = 0.0f;
         if (fscanf(f, "%31s", command) != 1) command[0] = 0;
         if (!strcmp(command, "poke") && fscanf(f, "%llx %f", &poke_address, &poke_delta) != 2) command[0] = 0;
+        if (!strcmp(command, "turn")) { /* "turn <pitch> <yaw> <frames>": through the camera hook */
+            float tp = 0.0f, ty = 0.0f;
+            int frames = 0;
+            if (fscanf(f, "%f %f %d", &tp, &ty, &frames) == 3) {
+                fclose(f);
+                float yaw0, pitch0, yaw1, pitch1;
+                bbgpu_camera_angles(&yaw0, &pitch0);
+                const uint64_t hits0 = runtime_camera_hook_hits();
+                for (int i = 0; i < frames; ++i) {
+                    runtime_camera_turn(tp, ty);
+                    Sleep(16);
+                }
+                Sleep(200);
+                bbgpu_camera_angles(&yaw1, &pitch1);
+                printf("Camscan: turn (%.4f, %.4f) x %d: camera yaw %.4f -> %.4f, pitch %.4f -> %.4f; "
+                       "hook ran %llu times\n", tp, ty, frames, yaw0, yaw1, pitch0, pitch1,
+                       (unsigned long long)(runtime_camera_hook_hits() - hits0));
+                fflush(stdout);
+                f = fopen(path, "w");
+                if (f) fclose(f);
+                continue;
+            }
+            command[0] = 0;
+        }
         if (!strcmp(command, "spin")) { /* "spin <radians per 5 ms>": does writing the yaw turn the camera? */
             float delta = 0.0f;
             unsigned index = 0;

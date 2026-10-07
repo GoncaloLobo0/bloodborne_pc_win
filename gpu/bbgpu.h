@@ -35,6 +35,9 @@ int bbgpu_overlay_captures_input(void);
 int bbgpu_mouse_look(int *right_x, int *right_y, unsigned *buttons);
 /* The game camera's yaw and pitch (radians); returns the number of frames published so far. */
 unsigned bbgpu_camera_angles(float *yaw, float *pitch);
+/* Mouse look through the camera hook: the captured mouse's motion since the last call as a turn
+ * (radians, sensitivity applied) and its buttons. Returns 0 when it is not captured. */
+int bbgpu_mouse_turn(float *yaw, float *pitch, unsigned *buttons);
 /* Number of symbols registered by the vendored libraries (diagnostics). */
 unsigned bbgpu_symbol_count(void);
 #ifdef __cplusplus

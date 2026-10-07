@@ -22,6 +22,9 @@ static int temp_file(char *name, size_t size) {
 static int capture;
 int bbgpu_overlay_captures_input(void) { return capture; }
 int bbgpu_mouse_look(int *right_x, int *right_y, unsigned *buttons) { (void)right_x; (void)right_y; (void)buttons; return 0; }
+int bbgpu_mouse_turn(float *yaw, float *pitch, unsigned *buttons) { (void)yaw; (void)pitch; (void)buttons; return 0; }
+int runtime_camera_hook_active(void) { return 0; }
+void runtime_camera_turn(float pitch, float yaw) { (void)pitch; (void)yaw; }
 uintptr_t runtime_lookup(const RuntimeExport *table, size_t count, const char *name) {
     (void)table; (void)count; (void)name;
     return 0;

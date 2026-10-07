@@ -29,6 +29,11 @@ void runtime_discord_start(void);
 /* Diagnostic: BB_CAMSCAN finds the camera angles in game memory (runtime_camscan.c). */
 void runtime_camscan_start(const void *image, size_t size);
 extern void (*runtime_watch_hook)(uintptr_t address);
+/* Mouse look through the game's camera update (runtime_camera_hook.c). */
+int runtime_camera_hook_install(unsigned char *image, size_t image_size);
+int runtime_camera_hook_active(void);
+void runtime_camera_turn(float pitch, float yaw);
+uint64_t runtime_camera_hook_hits(void);
 /* Called on each guest thread as it starts, when set (runtime_thread.c). */
 extern void (*runtime_thread_start_hook)(void);
 uintptr_t runtime_resolve(const char *name, int is_data);

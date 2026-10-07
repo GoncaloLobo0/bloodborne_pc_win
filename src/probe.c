@@ -818,6 +818,7 @@ int main(int argc, char **argv) {
 #ifdef _WIN32
     runtime_watch_hook = bb_watch_set_all;
 #endif
+    runtime_camera_hook_install(image, round_page(size));
     runtime_camscan_start(image, round_page(size));
     printf("Entering original x86-64 code at guest offset 0x%" PRIx64 "\n", entry);
 #ifdef _WIN32

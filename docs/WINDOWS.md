@@ -118,7 +118,9 @@ The character's name is typed on the keyboard in a box over the game.
   that supports it.
 - **Sharpening / Sharpness:** raise it if FSR 3.1 looks soft.
 - **Camera motion: y up** — keep it on (see [Fixes](#windows-port-fixes)).
-- **Mouse look / Mouse sensitivity.**
+- **Mouse look / Mouse sensitivity.** The mouse turns the camera directly, one to one like a PC
+  game (a hook in the game's camera update, Bloodborne 1.09; `BB_MOUSE_HOOK=0` falls back to
+  emulating the right stick).
 - **Game effects** (apply after a restart): chromatic aberration, depth of field, motion blur
   (off by default: it draws a mirrored copy of the scene over the sky), SSAO, the game's own
   anti-aliasing, dynamic light shadows, model detail.

@@ -315,7 +315,15 @@ static void sample_host(PadData *d) {
     /* Mouse look (gpu/shim/window.cpp): the mouse turns the camera unless the arrow keys do;
      * left button R1, right L1, middle R3. */
     int mouse_x, mouse_y; unsigned mouse_buttons;
-    if (bbgpu_mouse_look(&mouse_x,&mouse_y,&mouse_buttons)) {
+    float turn_yaw, turn_pitch;
+    if (runtime_camera_hook_active() && bbgpu_mouse_turn(&turn_yaw,&turn_pitch,&mouse_buttons)) {
+        /* Straight into the game's camera update (runtime_camera_hook.c): right turns right,
+         * down looks down. */
+        runtime_camera_turn(turn_pitch,turn_yaw);
+        if (mouse_buttons & 1u) d->buttons|=BTN_R1;
+        if (mouse_buttons & 4u) d->buttons|=BTN_L1;
+        if (mouse_buttons & 2u) d->buttons|=BTN_R3;
+    } else if (bbgpu_mouse_look(&mouse_x,&mouse_y,&mouse_buttons)) {
         if (d->right_x==128) d->right_x=(uint8_t)mouse_x;
         if (d->right_y==128) d->right_y=(uint8_t)mouse_y;
         if (mouse_buttons & 1u) d->buttons|=BTN_R1;

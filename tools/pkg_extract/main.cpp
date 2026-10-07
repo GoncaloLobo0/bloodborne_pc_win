@@ -2,6 +2,7 @@
 // bbport: unpacks a fake-signed (backup) PS4 package into a game folder, with shadPS4's package
 // extractor (v0.7.0, tools/pkg_extract). Retail packages need the console's keys and fail.
 //   pkg-extract <package.pkg> <output folder>
+//   pkg-extract --list <package.pkg> <output folder>   the files it would write (folders only)
 // The output folder is the game folder itself (e.g. CUSA03173); for an update, extract to
 // <title>-UPDATE and copy it over the base game.
 #include <algorithm>
@@ -14,8 +15,13 @@
 
 int main(int argc, char** argv) {
     std::setvbuf(stdout, nullptr, _IONBF, 0);
+    const bool list = argc == 4 && std::string(argv[1]) == "--list";
+    if (list) {
+        ++argv;
+        --argc;
+    }
     if (argc != 3) {
-        std::fprintf(stderr, "usage: pkg-extract <package.pkg> <output folder>\n");
+        std::fprintf(stderr, "usage: pkg-extract [--list] <package.pkg> <output folder>\n");
         return 2;
     }
     const std::filesystem::path package = std::filesystem::u8path(argv[1]);
@@ -42,6 +48,14 @@ int main(int argc, char** argv) {
         return 1;
     }
     const int files = int(pkg.GetNumberOfFiles());
+    if (list) {
+        for (int i = 0; i < files; ++i) {
+            if (const auto path = pkg.FilePath(i); !path.empty()) {
+                std::printf("%s\n", path.lexically_relative(output).generic_string().c_str());
+            }
+        }
+        return 0;
+    }
     std::atomic<int> next{0}, done{0};
     const unsigned workers = std::max(1u, std::min(8u, std::thread::hardware_concurrency()));
     std::printf("Extracting %d entries into %s with %u threads\n", files, output.string().c_str(), workers);

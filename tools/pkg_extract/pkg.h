@@ -113,6 +113,14 @@ public:
         return fsTable.size();
     }
 
+    /// bbport: an entry's destination path, empty for one that is not a file (--list).
+    std::filesystem::path FilePath(int index) const {
+        const auto& entry = fsTable[index];
+        const auto it = extractPaths.find(entry.inode);
+        return entry.type == PFS_FILE && it != extractPaths.end() ? it->second
+                                                                  : std::filesystem::path{};
+    }
+
     u64 GetPkgSize() {
         return pkgSize;
     }

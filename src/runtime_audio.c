@@ -52,8 +52,14 @@ static size_t buffers_out, ports_opened;
 
 static uint64_t now_ns(void) { struct timespec t; clock_gettime(CLOCK_MONOTONIC,&t); return (uint64_t)t.tv_sec*1000000000u+(uint64_t)t.tv_nsec; }
 static void sleep_until(uint64_t deadline) {
+#ifdef _WIN32
+    /* winpthreads has no absolute CLOCK_MONOTONIC sleep (it fails at once, and the loop below
+     * would spin forever on the first buffer: no sound). */
+    for (uint64_t now; (now=now_ns())<deadline;) runtime_host_sleep_ns(deadline-now);
+#else
     struct timespec t={(time_t)(deadline/1000000000u),(long)(deadline%1000000000u)};
     while (clock_nanosleep(CLOCK_MONOTONIC,TIMER_ABSTIME,&t,NULL)) {}
+#endif
 }
 static int sdl_audio(void) {
     if (sdl_ready<0) {

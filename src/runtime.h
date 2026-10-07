@@ -18,6 +18,8 @@ void runtime_memory_init(void);
 uint32_t runtime_thread_tls_offset(void);
 /* 1 on a thread that runs game code. */
 int runtime_thread_is_guest(void);
+/* Sleeps about ns on a high-resolution timer (runtime_kernel.c). */
+void runtime_host_sleep_ns(uint64_t ns);
 #endif
 #define ABI __attribute__((sysv_abi))
 typedef void (ABI *GuestCallback)(void);

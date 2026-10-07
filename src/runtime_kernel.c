@@ -120,7 +120,7 @@ void runtime_sleep_stats(uint64_t *calls, uint64_t *ns) {
 #ifdef _WIN32
 /* The game polls GPU labels with short sleeps: a high-resolution waitable timer per thread
  * (Windows 10 1803+) instead of Sleep's millisecond ticks; very short waits only yield. */
-static void host_sleep(uint64_t ns) {
+void runtime_host_sleep_ns(uint64_t ns) {
     static _Thread_local HANDLE timer;
     if (ns < 20000) { SwitchToThread(); return; }
     if (!timer) {
@@ -138,7 +138,7 @@ static int sleep_ns(uint64_t ns) {
     int result=0;
 #ifdef _WIN32
     (void)t;
-    host_sleep(ns);
+    runtime_host_sleep_ns(ns);
 #else
     while (nanosleep(&t,&t)) if (errno!=EINTR) { result=errno; break; }
 #endif

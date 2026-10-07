@@ -32,3 +32,5 @@ patches.json
 /.toolchain/
 # Game files kept next to the port (never committed)
 /roms/
+# Local Windows shortcuts (machine-specific paths)
+*.lnk

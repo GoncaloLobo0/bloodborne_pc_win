@@ -7,6 +7,7 @@
 #include <cstdlib>
 #include <cstring>
 
+#include "bbport_settings.h"
 #include "bbport_toggles.h"
 
 #include "video_core/host_shaders/camera_motion_comp.h"
@@ -228,7 +229,7 @@ void CameraMotion::RecordMotion(vk::ImageView depth_view, vk::ImageView motion_v
         .size = {float(width), float(height)},
         .jitter = jitter,
         .previous_jitter = previous_jitter,
-        .mode = object_valid ? 1u : 0u,
+        .mode = (object_valid ? 1u : 0u) | ((BbSettings::Get().camera_y_up != BbToggle::Disabled(1ull << 31)) ? 8u : 0u),
     };
     // bbport: everything the pass reads is captured: it may be recorded on a recording thread
     // while this thread goes on with the next frame's camera.
@@ -375,11 +376,12 @@ void CameraMotion::Overlay(VideoCore::ImageId frame) {
         .size = {float(color.info.size.width), float(color.info.size.height)},
         .jitter = jitter,
         .previous_jitter = previous_jitter,
-        .mode = BbToggle::Disabled(1u << 20)   ? 1u
-                : BbToggle::Disabled(1u << 21) ? 2u
-                : BbToggle::Disabled(1u << 22) ? 3u
-                : BbToggle::Disabled(1u << 23) ? 4u
-                                               : 0u,
+        .mode = (BbToggle::Disabled(1u << 20)   ? 1u
+                 : BbToggle::Disabled(1u << 21) ? 2u
+                 : BbToggle::Disabled(1u << 22) ? 3u
+                 : BbToggle::Disabled(1u << 23) ? 4u
+                                                : 0u) |
+                ((BbSettings::Get().camera_y_up != BbToggle::Disabled(1ull << 31)) ? 8u : 0u),
     };
     static u32 log_counter = 0;
     if (++log_counter % 200 == 0) {

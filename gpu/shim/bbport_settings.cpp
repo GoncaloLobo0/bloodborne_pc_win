@@ -42,6 +42,8 @@ void Set(Values& v, const std::string& key, const std::string& value) {
         v.reactive = i != 0;
     } else if (key == "object_motion") {
         v.object_motion = i != 0;
+    } else if (key == "camera_y_up") {
+        v.camera_y_up = i != 0 || value == "up";
     } else if (key == "reactive_scale") {
         v.reactive_scale = Clamp(f, 0.0f, 16.0f);
     } else if (key == "reactive_threshold") {
@@ -113,6 +115,7 @@ void Load() {
         {"BB_REACTIVE", "reactive"},              {"BB_REACTIVE_SCALE", "reactive_scale"},
         {"BB_REACTIVE_THRESHOLD", "reactive_threshold"}, {"BB_REACTIVE_MAX", "reactive_max"},
         {"BB_UPSCALE_PRESET", "preset"},            {"BB_OBJECT_MOTION", "object_motion"},
+        {"BB_CAMERA_Y", "camera_y_up"},
     };
     for (const auto& [env, key] : env_keys) {
         if (const char* value = std::getenv(env)) {
@@ -175,13 +178,15 @@ void Save() {
                  "# bbport settings (in-game menu: Insert / L3+R3)\n"
                  "upscaler=%s\npreset=%d\nsharpen=%d\nsharpness=%.2f\njitter=%d\n"
                  "reactive=%d\nobject_motion=%d\nreactive_scale=%.2f\nreactive_threshold=%.2f\nreactive_max=%.2f\n"
-                 "debug_view=%d\nshow_fps=%d\nfsr4_auto_exposure=%d\nfsr4_invert_jitter=%d\n",
+                 "debug_view=%d\nshow_fps=%d\nfsr4_auto_exposure=%d\nfsr4_invert_jitter=%d\n"
+                 "camera_y_up=%d\n",
                  UpscalerName(v.upscaler), v.preset.load(), int(v.sharpen.load()),
                  v.sharpness.load(), int(v.jitter.load()), int(v.reactive.load()),
                  int(v.object_motion.load()),
                  v.reactive_scale.load(), v.reactive_threshold.load(), v.reactive_max.load(),
                  v.debug_view.load(), int(v.show_fps.load()),
-                 int(v.fsr4_auto_exposure.load()), int(v.fsr4_invert_jitter.load()));
+                 int(v.fsr4_auto_exposure.load()), int(v.fsr4_invert_jitter.load()),
+                 int(v.camera_y_up.load()));
     // Read by patches.py at start.
     for (int e = 0; e < EffectCount; ++e) {
         std::fprintf(file, "%s=%d\n", Effects[e].key, int(v.effects[e].load()));

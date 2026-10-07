@@ -24,11 +24,14 @@ layout(push_constant) uniform Constants {
     vec2 size;         // pixels
     vec2 jitter;       // current viewport shift in render pixels (x right, y down)
     vec2 previous_jitter;
-    uint mode;         // motion: 1 = object motion vectors available; debug: 0 motion, 1 raw
-                       // depth, 2 view z / 50, 3 reprojected previous frame, 4 |difference|
+    uint flags;        // low 3 bits: the mode; 8: view +y up the screen (0.2 convention)
+                       // mode: motion: 1 = object motion vectors available; debug: 0 motion,
+                       // 1 raw depth, 2 view z / 50, 3 reprojected previous frame, 4 |difference|
 };
 
 void main() {
+    const uint mode = flags & 7u;
+    const bool y_up = (flags & 8u) != 0u;
     const ivec2 pixel = ivec2(gl_GlobalInvocationID.xy);
     if (pixel.x >= int(size.x) || pixel.y >= int(size.y)) {
         return;
@@ -42,7 +45,8 @@ void main() {
     // vectors on static meshes (2026-10-06, 13 frames running up the Cathedral Ward stairs):
     // this convention matches them within 0.05 px, y up was 1.3-3.7 px off. The error is in
     // pitch and vertical movement, so it showed on stairs (FSR 4 streaks, FSR 3 blur).
-    const vec2 ndc = vec2(scene_uv.x * 2.0 - 1.0, scene_uv.y * 2.0 - 1.0);
+    // bbport: the 0.2 convention (view +y up the screen) on request (camera_y_up).
+    const vec2 ndc = vec2(scene_uv.x * 2.0 - 1.0, y_up ? 1.0 - scene_uv.y * 2.0 : scene_uv.y * 2.0 - 1.0);
 
     // Clip z = zs * z + zo, w = z; depth = zs + zo / z (zo < 0, depth < zs in front).
     const bool sky = depth >= 1.0;
@@ -55,7 +59,7 @@ void main() {
         vec3(dot(reproject[0], view), dot(reproject[1], view), dot(reproject[2], view));
     const vec2 prev_ndc =
         vec2(prev_view.x * prev_proj.x, prev_view.y * prev_proj.y) / max(prev_view.z, 1e-4);
-    const vec2 prev_uv = prev_ndc * 0.5 + 0.5;
+    const vec2 prev_uv = vec2(prev_ndc.x * 0.5 + 0.5, y_up ? 0.5 - prev_ndc.y * 0.5 : prev_ndc.y * 0.5 + 0.5);
     const vec2 motion = (prev_uv - scene_uv) * size;
 
 #ifdef DEBUG_OVERLAY

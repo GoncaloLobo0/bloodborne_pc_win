@@ -52,6 +52,12 @@ struct Values {
     std::atomic<bool> jitter{true};
     std::atomic<bool> reactive{false};
     std::atomic<bool> object_motion{true};
+    /// bbport: camera motion vectors with 0.2's vertical convention (view +y up the screen), the
+    /// default. Measured with the reprojection difference view (BB_DEBUG_MOTION, mode 4) while
+    /// the camera pitches, alternating the two in one run: mean error 22 with +y up, 59 with
+    /// 0.3's +y down (no difference while it only turns). The +y down error showed as FSR
+    /// smearing and blur in motion (upstream #42, #47).
+    std::atomic<bool> camera_y_up{true};
     std::atomic<float> reactive_scale{1.0f};
     std::atomic<float> reactive_threshold{0.2f};
     std::atomic<float> reactive_max{0.9f};

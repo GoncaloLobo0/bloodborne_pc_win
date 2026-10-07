@@ -1248,7 +1248,12 @@ void TextureCache::GarbageCollectImages() {
             const char* env = std::getenv("BB_GC_BUDGET_MB");
             return env ? std::strtoull(env, nullptr, 10) << 20 : 0;
         }();
-        if (instance.IsIntegrated() || forced_budget) {
+        // bbport: discrete GPUs too. The startup rule put the pressure mark at 40% of the budget
+        // below 16 GB (2.6 GB of 6.5 on an 8 GB RX 6650 XT) while the usage counts buffers as
+        // well: the collector was always under pressure, evicting images that came back a moment
+        // later (hitches). BB_GC_STARTUP_RULE=1 restores it.
+        static const bool startup_rule = std::getenv("BB_GC_STARTUP_RULE") != nullptr;
+        if (instance.IsIntegrated() || forced_budget || !startup_rule) {
             const u64 budget = forced_budget ? forced_budget : instance.GetDeviceMemoryBudgetNow();
             if (budget != 0) {
                 trigger_gc_memory = budget / 10 * 7;

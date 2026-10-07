@@ -585,6 +585,14 @@ private:
     bool image_2d_view_of_3d{};
     bool image_view_min_lod{};
     bool shader_clock{};
+    bool device_fault{};
+
+public:
+    bool IsDeviceFaultSupported() const {
+        return device_fault;
+    }
+
+private:
     bool compute_shader_derivatives{};
     bool mixed_float_dot_product{}; // bbport: VK_VALVE_shader_mixed_float_dot_product (FSR 4.1.1)
     bool supports_memory_budget{};

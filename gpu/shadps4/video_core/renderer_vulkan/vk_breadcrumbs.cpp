@@ -41,6 +41,9 @@ struct Stream {
 std::array<Stream, MaxStreams> streams;
 std::atomic<u32> num_streams{0};
 bool enabled = false;
+// bbport: the device of Init, for VK_EXT_device_fault at device loss.
+vk::Device fault_device;
+bool fault_supported = false;
 std::once_flag init_once;
 vk::Buffer marker_buffer{};
 VmaAllocation marker_allocation{};
@@ -56,6 +59,8 @@ struct ArgsNote {
 std::array<ArgsNote, ArgSlots> args_notes{};
 
 void Init(const Instance& instance) {
+    fault_device = instance.GetDevice();
+    fault_supported = instance.IsDeviceFaultSupported();
     const char* env = std::getenv("BB_BREADCRUMBS");
     if (env && env[0] == '0') {
         return;
@@ -272,10 +277,44 @@ namespace {
 void Report(const char* title, const char* where);
 }
 
+/// The faulting addresses and the vendor's fault description (VK_EXT_device_fault).
+static void ReportDeviceFault() {
+    if (!fault_supported) {
+        return;
+    }
+    vk::DeviceFaultCountsEXT counts{};
+    if (fault_device.getFaultInfoEXT(&counts, nullptr) != vk::Result::eSuccess) {
+        return;
+    }
+    std::vector<vk::DeviceFaultAddressInfoEXT> addresses(counts.addressInfoCount);
+    std::vector<vk::DeviceFaultVendorInfoEXT> vendor(counts.vendorInfoCount);
+    vk::DeviceFaultInfoEXT info{
+        .pAddressInfos = addresses.data(),
+        .pVendorInfos = vendor.data(),
+    };
+    counts.vendorBinarySize = 0;
+    if (fault_device.getFaultInfoEXT(&counts, &info) != vk::Result::eSuccess) {
+        return;
+    }
+    std::fprintf(stderr, "GPU fault: %s\n", info.description.data());
+    for (const auto& a : addresses) {
+        std::fprintf(stderr, "  %s at %#llx (precision %#llx)\n", vk::to_string(a.addressType).c_str(),
+                     (unsigned long long)a.reportedAddress, (unsigned long long)a.addressPrecision);
+    }
+    for (const auto& v : vendor) {
+        std::fprintf(stderr, "  vendor: %s (code %#llx, data %#llx)\n", v.description.data(),
+                     (unsigned long long)v.vendorFaultCode, (unsigned long long)v.vendorFaultData);
+    }
+}
+
 void ReportDeviceLost(const char* where) {
     static std::atomic_flag reported = ATOMIC_FLAG_INIT;
     if (enabled && !reported.test_and_set()) {
         Report("at device lost", where);
+    }
+    static std::atomic_flag fault_reported = ATOMIC_FLAG_INIT;
+    if (!fault_reported.test_and_set()) {
+        ReportDeviceFault();
     }
 }
 

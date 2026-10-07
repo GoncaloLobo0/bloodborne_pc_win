@@ -524,6 +524,55 @@ Frame* Presenter::PrepareBlankFrame(bool present_thread) {
     return frame;
 }
 
+// bbport: BB_SCREENSHOT_TRIGGER=<file>: when the file appears (it is deleted), the next presented
+// frame (the game's image with its UI, before the window's scaling) is written to BB_DUMP_DIR
+// (default out/dump) as shot_<n>_<width>x<height>_<format>.raw, 4 bytes per pixel. Works with a
+// hidden window (BB_WINDOW_HIDDEN=1): automated checks of what the game shows.
+static void CaptureFrame(const Instance& instance, Scheduler& scheduler, vk::CommandBuffer cmdbuf,
+                         vk::Image image, u32 width, u32 height, vk::Format format) {
+    static int index = 0;
+    static const std::string dir = [] {
+        const char* env = std::getenv("BB_DUMP_DIR");
+        return std::string{env && env[0] ? env : "out/dump"};
+    }();
+    const VkDeviceSize size = VkDeviceSize(width) * height * 4;
+    const VkBufferCreateInfo buffer_ci{
+        .sType = VK_STRUCTURE_TYPE_BUFFER_CREATE_INFO,
+        .size = size,
+        .usage = VK_BUFFER_USAGE_TRANSFER_DST_BIT,
+    };
+    const VmaAllocationCreateInfo alloc_ci{
+        .flags = VMA_ALLOCATION_CREATE_MAPPED_BIT | VMA_ALLOCATION_CREATE_HOST_ACCESS_RANDOM_BIT,
+        .usage = VMA_MEMORY_USAGE_AUTO_PREFER_HOST,
+    };
+    VkBuffer buffer{};
+    VmaAllocation allocation{};
+    VmaAllocationInfo info{};
+    if (vmaCreateBuffer(instance.GetAllocator(), &buffer_ci, &alloc_ci, &buffer, &allocation, &info) !=
+        VK_SUCCESS) {
+        return;
+    }
+    const vk::BufferImageCopy region{
+        .imageSubresource = {vk::ImageAspectFlagBits::eColor, 0, 0, 1},
+        .imageExtent = {width, height, 1},
+    };
+    cmdbuf.copyImageToBuffer(image, vk::ImageLayout::eTransferSrcOptimal, buffer, region);
+    const bool bgra = format == vk::Format::eB8G8R8A8Unorm || format == vk::Format::eB8G8R8A8Srgb;
+    char path[512];
+    std::snprintf(path, sizeof(path), "%s/shot_%03d_%ux%u_%s.raw", dir.c_str(), index++, width,
+                  height, bgra ? "bgra" : "rgba");
+    scheduler.DeferPriorityOperation([allocator = instance.GetAllocator(), buffer, allocation, info,
+                                      size, file = std::string{path}] {
+        vmaInvalidateAllocation(allocator, allocation, 0, VK_WHOLE_SIZE);
+        if (FILE* f = std::fopen(file.c_str(), "wb")) {
+            std::fwrite(info.pMappedData, 1, size, f);
+            std::fclose(f);
+            std::printf("Screenshot: %s\n", file.c_str());
+        }
+        vmaDestroyBuffer(allocator, buffer, allocation);
+    });
+}
+
 void Presenter::Present(Frame* frame, bool is_reusing_frame, bool is_game_frame) {
     // Free the frame for reuse
     const auto free_frame = [&] {
@@ -611,6 +660,10 @@ void Presenter::Present(Frame* frame, bool is_reusing_frame, bool is_game_frame)
         };
         cmdbuf.pipelineBarrier(vk::PipelineStageFlagBits::eTransfer, vk::PipelineStageFlagBits::eTransfer,
                                vk::DependencyFlagBits::eByRegion, clear_done, {}, {});
+        if (static const char* shot = std::getenv("BB_SCREENSHOT_TRIGGER"); shot && std::remove(shot) == 0) {
+            CaptureFrame(instance, scheduler, cmdbuf, frame->image, frame->width, frame->height,
+                         swapchain.GetSurfaceFormat().format);
+        }
         cmdbuf.blitImage(frame->image, vk::ImageLayout::eTransferSrcOptimal, swapchain_image,
                          vk::ImageLayout::eTransferDstOptimal,
                          MakeImageBlitFit(frame->width, frame->height, extent.width, extent.height),

@@ -369,6 +369,7 @@ bool Instance::CreateDevice() {
         compute_shader_derivatives_features =
             feature_chain.get<vk::PhysicalDeviceComputeShaderDerivativesFeaturesKHR>();
     }
+    device_fault = add_extension(VK_EXT_DEVICE_FAULT_EXTENSION_NAME);
     shader_clock = add_extension(VK_KHR_SHADER_CLOCK_EXTENSION_NAME);
     if (shader_clock) {
         shader_clock_features = feature_chain.get<vk::PhysicalDeviceShaderClockFeaturesKHR>();
@@ -640,6 +641,14 @@ bool Instance::CreateDevice() {
         device_chain.unlink<vk::PhysicalDeviceShaderMixedFloatDotProductFeaturesVALVE>();
     }
 
+    // bbport: VK_EXT_device_fault: at device loss, the faulting GPU address and access
+    // (Breadcrumbs::ReportDeviceLost).
+    vk::PhysicalDeviceFaultFeaturesEXT fault_features{.deviceFault = VK_TRUE};
+    if (device_fault) {
+        auto& create_info = device_chain.get<vk::DeviceCreateInfo>();
+        fault_features.pNext = const_cast<void*>(create_info.pNext);
+        create_info.pNext = &fault_features;
+    }
     auto [device_result, dev] = physical_device.createDeviceUnique(device_chain.get());
     if (device_result != vk::Result::eSuccess) {
         LOG_CRITICAL(Render_Vulkan, "Failed to create device: {}", vk::to_string(device_result));

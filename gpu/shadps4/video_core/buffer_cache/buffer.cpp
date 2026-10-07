@@ -191,6 +191,15 @@ Buffer::Buffer(const Vulkan::Instance& instance, VAddr cpu_addr_, u64 size_bytes
     } else {
         Vulkan::SetObjectName(device, Handle(), "Buffer {:#x}:{:#x}", cpu_addr, size_bytes);
     }
+    // bbport: BB_LOG_BDA=1: each buffer's GPU address range (matching a VK_EXT_device_fault
+    // address to its buffer).
+    if (static const bool log_bda = std::getenv("BB_LOG_BDA") != nullptr; log_bda) {
+        std::printf("BDA: %#llx-%#llx %s (guest %#llx, type %d)\n",
+                    (unsigned long long)buffer.bda_addr,
+                    (unsigned long long)(buffer.bda_addr + size_bytes),
+                    debug_name.empty() ? "buffer" : std::string(debug_name).c_str(),
+                    (unsigned long long)cpu_addr, int(mem_type));
+    }
 
     if (mem_type != MemoryType::Sparse) {
         VkMemoryPropertyFlags property_flags{};

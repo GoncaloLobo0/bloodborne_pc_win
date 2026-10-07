@@ -957,6 +957,42 @@ bool PlausibleType3(u32 dword, std::size_t remaining) {
     const PM4Header header{.raw = dword};
     return header.type == 3 && (dword & 0xfc) == 0 && header.type3.NumWords() < remaining;
 }
+// bbport: a register write (SET_SH/CONTEXT/UCONFIG_REG) whose values are missing: seen during
+// area loads, e.g. SET_SH_REG 0x212 (count 2) directly followed by a WAIT_REG_MEM. Read as
+// declared, its "values" are the next packets and decoding goes on in the middle of them
+// (garbage shader addresses and settings, skipped waits). It is recognized when the declared end
+// is not a packet while the dword after the register offset starts two consecutive packets.
+/// Where decoding resumes in a truncated register packet (0: not truncated).
+std::size_t TruncatedRegisterPacket(std::span<const u32> dcb) {
+    const PM4Header header{.raw = dcb[0]};
+    const auto opcode = header.type3.opcode.Value();
+    if (opcode != PM4ItOpcode::SetShReg && opcode != PM4ItOpcode::SetContextReg &&
+        opcode != PM4ItOpcode::SetUconfigReg) {
+        return 0;
+    }
+    const std::size_t declared_end = std::size_t{header.type3.NumWords()} + 1;
+    if (header.type3.NumWords() < 2 || dcb.size() <= declared_end + 1 ||
+        PlausibleType3(dcb[declared_end], dcb.size() - declared_end) ||
+        (dcb[declared_end] >> 30) == 2 /* type 2 padding */) {
+        return 0;
+    }
+    // The first value from which two consecutive packets follow (values before it, if any,
+    // are dropped as well: the register keeps its previous contents).
+    for (std::size_t start = 2; start < declared_end; ++start) {
+        std::size_t at = start;
+        bool chain = true;
+        for (int packets = 0; packets < 2 && chain; ++packets) {
+            chain = at < dcb.size() && PlausibleType3(dcb[at], dcb.size() - at);
+            if (chain) {
+                at += PM4Header{.raw = dcb[at]}.type3.NumWords() + 1;
+            }
+        }
+        if (chain && at <= dcb.size()) {
+            return start;
+        }
+    }
+    return 0;
+}
 // bbport: an invalid packet header (Steam Deck: "PM4 type 0" with dword 0, 8 or 0x10, mid-game): where
 // in which buffer, what surrounds it, and which logged writes of ours landed in the buffer.
 void ReportBadPacket(uintptr_t base, std::size_t dwords, const u32* at, u64 seq, int depth) {
@@ -1046,6 +1082,17 @@ Liverpool::Task Liverpool::ProcessGraphics(std::span<const u32> dcb, std::span<c
         case 3:
             const u32 count = header->type3.NumWords();
             const PM4ItOpcode opcode = header->type3.opcode;
+            if (const std::size_t resume = TruncatedRegisterPacket(dcb)) {
+                // bbport: register values missing (see TruncatedRegisterPacket): nothing is
+                // written, and decoding goes on with the packet found inside its body.
+                static std::atomic<int> reports{0};
+                if (reports.fetch_add(1, std::memory_order_relaxed) < 8) {
+                    std::fprintf(stderr, "PM4: register packet %#x (offset %#x) cut short after "
+                                         "%zu dwords, skipped\n", header->raw, dcb[1], resume);
+                }
+                dcb = NextPacket(dcb, resume);
+                continue;
+            }
             ApplyGraphicsRegisterPacket(regs, header, gfx_reg_checksum, &pipe_dirty);
             // DmaData to 0x3022C does nothing here (skipped below): no need to wait.
             if (rasterizer && !PipelinedOpcode(opcode) &&

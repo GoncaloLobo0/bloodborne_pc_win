@@ -783,6 +783,7 @@ int main(int argc, char **argv) {
             if (result) fail("module initializer failed");
         }
     }
+    runtime_discord_start();
     printf("Entering original x86-64 code at guest offset 0x%" PRIx64 "\n", entry);
 #ifdef _WIN32
     bb_watch_thread_start();

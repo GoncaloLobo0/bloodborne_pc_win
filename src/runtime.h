@@ -24,6 +24,8 @@ void runtime_host_sleep_ns(uint64_t ns);
 #define ABI __attribute__((sysv_abi))
 typedef void (ABI *GuestCallback)(void);
 void runtime_start(uint64_t capabilities);
+/* Discord Rich Presence ("Playing Bloodborne"), when Discord runs (runtime_discord.c). */
+void runtime_discord_start(void);
 uintptr_t runtime_resolve(const char *name, int is_data);
 void runtime_report(void);
 void runtime_finalize(void *dso);

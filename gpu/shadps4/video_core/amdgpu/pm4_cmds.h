@@ -3,6 +3,8 @@
 
 #pragma once
 
+#include <atomic>
+#include <cstdio>
 #include <cstring>
 #include "common/assert.h"
 #include "common/bit_field.h"
@@ -354,6 +356,23 @@ static u64 GetGpuPerfCounter() {
     return gpu_cycles;
 }
 
+// bbport: a fence packet with a field Liverpool has no value for (a malformed or reused command
+// buffer, as in Liverpool's ReportBadPacket) stopped the game - entering an area, 2026-10-10.
+// It is reported and skipped: its address is no more reliable than the field, so nothing is
+// written to it.
+inline void ReportBadFence(const char* name, const void* packet, u32 dwords) {
+    static std::atomic<int> reports{0};
+    if (reports.fetch_add(1, std::memory_order_relaxed) >= 8) {
+        return;
+    }
+    const auto* dw = static_cast<const u32*>(packet);
+    std::fprintf(stderr, "PM4: %s with invalid fields skipped:", name);
+    for (u32 i = 0; i < dwords; ++i) {
+        std::fprintf(stderr, " %08x", dw[i]);
+    }
+    std::fprintf(stderr, "\n");
+}
+
 // VGT_EVENT_INITIATOR.EVENT_TYPE
 enum class EventType : u32 {
     SampleStreamoutStats1 = 1,
@@ -466,6 +485,10 @@ struct PM4CmdEventWriteEop {
     }
 
     void SignalFence(auto&& write_mem, auto&& signal_irq) const {
+        if (data_sel.Value() > DataSelect::PerfCounter) {
+            ReportBadFence("EVENT_WRITE_EOP", this, sizeof(*this) / sizeof(u32));
+            return;
+        }
         u32* address = Address<u32>();
         switch (data_sel.Value()) {
         case DataSelect::None: {
@@ -500,12 +523,11 @@ struct PM4CmdEventWriteEop {
         case InterruptSelect::IrqOnly:
             ASSERT(data_sel == DataSelect::None);
             [[fallthrough]];
+        case InterruptSelect::IrqUndocumented: // as RELEASE_MEM below
+            [[fallthrough]];
         case InterruptSelect::IrqWhenWriteConfirm: {
             signal_irq();
             break;
-        }
-        default: {
-            UNREACHABLE();
         }
         }
     }
@@ -810,7 +832,8 @@ struct PM4CmdEventWriteEos {
             break;
         }
         default: {
-            UNREACHABLE_MSG("Unknown command {}", u32(cmd));
+            ReportBadFence("EVENT_WRITE_EOS", this, sizeof(*this) / sizeof(u32));
+            break;
         }
         }
     }
@@ -953,7 +976,14 @@ struct PM4CmdReleaseMem {
     }
 
     void SignalFence(auto&& signal_irq, auto&& gds_to_mem) const {
+        if (data_sel.Value() > DataSelect::GdsMemStore) {
+            ReportBadFence("RELEASE_MEM", this, sizeof(*this) / sizeof(u32));
+            return;
+        }
         switch (data_sel.Value()) {
+        case DataSelect::None: {
+            break;
+        }
         case DataSelect::Data32Low: {
             *Address<u32*>() = DataDWord();
             break;
@@ -974,9 +1004,6 @@ struct PM4CmdReleaseMem {
             gds_to_mem(Address<VAddr>(), gds_index, num_dw);
             break;
         }
-        default: {
-            UNREACHABLE();
-        }
         }
 
         switch (int_sel.Value()) {
@@ -984,6 +1011,8 @@ struct PM4CmdReleaseMem {
             // No interrupt
             break;
         }
+        case InterruptSelect::IrqOnly:
+            [[fallthrough]];
         case InterruptSelect::IrqUndocumented:
             [[fallthrough]];
         case InterruptSelect::IrqWhenWriteConfirm: {

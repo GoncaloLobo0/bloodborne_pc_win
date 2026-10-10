@@ -173,6 +173,17 @@ static void report_exception(EXCEPTION_POINTERS *ep) {
              (unsigned long long)c->Rax, (unsigned long long)c->Rbx, (unsigned long long)c->Rcx, (unsigned long long)c->Rdx,
              (unsigned long long)c->Rsi, (unsigned long long)c->Rdi, (unsigned long long)c->Rbp, (unsigned long long)c->Rsp);
     write_err(line);
+    /* Game code addresses near the top of the stack: a fault in a host leaf the game called
+     * (memcpy, 2026-10-10) has the caller's return address at rsp, and the rbp chain below misses
+     * it when that function keeps no frame pointer. Data pointers into the image show up too. */
+    uintptr_t sp = (uintptr_t)c->Rsp, quad[2];
+    for (int i = 0, found = 0; i < 64 && found < 8 && read_quad(sp + (uintptr_t)i * 8, quad); ++i) {
+        if (quad[0] - (uintptr_t)image >= 0x10000000) continue;
+        describe(where, sizeof(where), quad[0]);
+        snprintf(line, sizeof(line), "  stack+0x%x: %s\n", i * 8, where);
+        write_err(line);
+        ++found;
+    }
     /* Frame chain through rbp (guest code keeps frame pointers in most functions). */
     uintptr_t rbp = (uintptr_t)c->Rbp, frame[2];
     for (int depth = 0; depth < 24 && rbp && read_quad(rbp, frame) && frame[0] > rbp; ++depth) {

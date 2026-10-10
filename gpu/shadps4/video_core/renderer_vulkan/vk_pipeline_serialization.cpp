@@ -246,12 +246,16 @@ bool PipelineCache::LoadGraphicsPipeline(Serialization::Archive& ar) {
     it.value() = std::make_unique<GraphicsPipeline>(
         instance, scheduler, desc_heap, profile, sel.graphics_key, *pipeline_cache, sel.infos,
         sel.runtime_infos, sel.fetch_shader, sel.modules, sdata, true);
+    const bool created = static_cast<bool>(it.value()->Handle());
+    if (!created) {
+        graphics_pipelines.erase(it);  // built again if the game draws with it
+    }
 
     sel.infos.fill(nullptr);
     sel.modules.fill(nullptr);
     sel.fetch_shader.reset();
 
-    return true;
+    return created;
 }
 
 bool PipelineCache::LoadPipelineStage(Serialization::Archive& ar, size_t stage) {

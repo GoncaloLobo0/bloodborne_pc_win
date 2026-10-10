@@ -422,8 +422,16 @@ GraphicsPipeline::GraphicsPipeline(
 
     auto [pipeline_result, pipe] =
         device.createGraphicsPipelineUnique(pipeline_cache, pipeline_info);
-    ASSERT_MSG(pipeline_result == vk::Result::eSuccess, "Failed to create graphics pipeline: {}",
-               vk::to_string(pipeline_result));
+    if (pipeline_result != vk::Result::eSuccess && preloading) {
+        // bbport: the AMD driver started refusing one cached pipeline (ErrorUnknown, valid
+        // SPIR-V) and the game stopped at every start. A cached one is only a head start:
+        // leave it out (PipelineCache::LoadGraphicsPipeline drops it).
+        LOG_ERROR(Render, "Cached graphics pipeline {} could not be created ({}): skipped",
+                  debug_str, vk::to_string(pipeline_result));
+        return;
+    }
+    ASSERT_MSG(pipeline_result == vk::Result::eSuccess, "Failed to create graphics pipeline: {} ({})",
+               vk::to_string(pipeline_result), debug_str);
     pipeline = std::move(pipe);
     SetObjectName(device, *pipeline, "Graphics Pipeline {}", debug_str);
 }

@@ -145,7 +145,6 @@ static bool ExecuteCopyShaderHLE(const Shader::Info& info, const AmdGpu::Compute
     const auto src_buf_sharp = info.buffers[1].GetSharp(info);
     const auto dst_buf_sharp = info.buffers[2].GetSharp(info);
     const auto buf_stride = src_buf_sharp.GetStride();
-    ASSERT(buf_stride == dst_buf_sharp.GetStride());
 
     struct CopyShaderControl {
         u32 dst_idx;
@@ -153,7 +152,21 @@ static bool ExecuteCopyShaderHLE(const Shader::Info& info, const AmdGpu::Compute
         u32 end;
     };
     static_assert(sizeof(CopyShaderControl) == 12);
-    ASSERT(ctl_buf_sharp.GetStride() == sizeof(CopyShaderControl));
+    // bbport: the game also dispatches it with a null buffer (no format, stride 0) - entering an
+    // area, 2026-10-10 - and this asserted. The shader itself handles that (a null buffer reads
+    // zeros, its writes are dropped): run it instead.
+    if (!ctl_buf_sharp || !src_buf_sharp || !dst_buf_sharp || buf_stride == 0 ||
+        buf_stride != dst_buf_sharp.GetStride() ||
+        ctl_buf_sharp.GetStride() != sizeof(CopyShaderControl)) {
+        static bool logged = false;
+        if (!logged) {
+            logged = true;
+            LOG_WARNING(Render, "Copy shader HLE: buffers ctl={}/{} src={}/{} dst={}/{} (records/stride) do not fit it: the shader runs",
+                        ctl_buf_sharp.num_records, ctl_buf_sharp.GetStride(), src_buf_sharp.num_records,
+                        buf_stride, dst_buf_sharp.num_records, dst_buf_sharp.GetStride());
+        }
+        return false;
+    }
     const auto ctl_buf = reinterpret_cast<const CopyShaderControl*>(ctl_buf_sharp.base_address);
 
     static std::vector<vk::BufferCopy> copies;

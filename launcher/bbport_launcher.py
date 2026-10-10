@@ -119,7 +119,7 @@ DEFAULTS = {
     "preupload": "",
     "mangohud": False,
     "frame_stats": False,
-    "save_log": False,
+    "save_stats": False,
     "crash_diag": False,
     "new_memory_model": False,
     "gpu_profile": False,
@@ -231,8 +231,9 @@ def game_environment(s):
         env["MANGOHUD"] = "1"
     if s["frame_stats"]:
         env["BB_FRAME_STATS"] = "1"
-    if s.get("save_log"):
-        env["BB_SAVE_LOG"] = "1"
+    # The log is always saved (run.sh); this adds the per-frame statistics files.
+    if s.get("save_stats"):
+        env["BB_SAVE_STATS"] = "1"
     # The PC memory model is experimental and off by default (run.sh); the keys "pc_memory" and
     # "old_memory_model" of older settings are ignored.
     env["BB_GUEST_IN_PLACE"] = "1" if s.get("new_memory_model") else "0"
@@ -596,11 +597,11 @@ class LauncherWindow(Adw.ApplicationWindow):
         dev = Adw.PreferencesGroup(title=tr("Для разработчика"))
         self.mangohud_row = Adw.SwitchRow(title="MangoHud", active=self.settings["mangohud"])
         dev.add(self.mangohud_row)
-        self.save_log_row = Adw.SwitchRow(
-            title=tr("Сохранять журнал и статистику в файл"),
-            subtitle=tr("В папку logs в каталоге данных: для разбора рывков и вылетов"),
-            active=self.settings.get("save_log", False))
-        dev.add(self.save_log_row)
+        self.save_stats_row = Adw.SwitchRow(
+            title=tr("Сохранять статистику кадров в файл"),
+            subtitle=tr("CSV по каждому кадру в папке logs: для разбора рывков (журнал сохраняется всегда)"),
+            active=self.settings.get("save_stats", False))
+        dev.add(self.save_stats_row)
         self.crash_diag_row = Adw.SwitchRow(
             title=tr("Диагностика вылетов"),
             subtitle=tr("Проверяет кучу игры и записывает записи в её память; немного медленнее"),
@@ -820,7 +821,7 @@ class LauncherWindow(Adw.ApplicationWindow):
         s["preupload"] = combo_value(self.preupload_row)
         s["mangohud"] = self.mangohud_row.get_active()
         s["frame_stats"] = self.stats_row.get_active()
-        s["save_log"] = self.save_log_row.get_active()
+        s["save_stats"] = self.save_stats_row.get_active()
         s["crash_diag"] = self.crash_diag_row.get_active()
         s["new_memory_model"] = self.new_memory_row.get_active()
         s["gpu_profile"] = self.profile_row.get_active()

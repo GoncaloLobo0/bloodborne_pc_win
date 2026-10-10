@@ -190,12 +190,12 @@ EN = {
     # Developer
     "Для разработчика": "Developer",
     "Статистика кадров в журнале": "Frame statistics in the log",
-    "Сохранять журнал и статистику в файл": "Save the log and statistics to a file",
+    "Сохранять статистику кадров в файл": "Save frame statistics to a file",
     "Диагностика вылетов": "Crash diagnostics",
     "Проверяет кучу игры и записывает записи в её память; немного медленнее":
         "Checks the game's heap and logs writes into its memory; a little slower",
-    "В папку logs в каталоге данных: для разбора рывков и вылетов":
-        "Into the logs folder of the data directory: to look into stutters and crashes",
+    "CSV по каждому кадру в папке logs: для разбора рывков (журнал сохраняется всегда)":
+        "Per-frame CSV files in the logs folder, to look into stutters (the log itself is always saved)",
     "Профиль GPU в журнале": "GPU profile in the log",
     "Слои валидации Vulkan": "Vulkan validation layers",
     "Сильно замедляет": "Much slower",

@@ -91,7 +91,9 @@ class NativeUiTests(unittest.TestCase):
 
 class DebugPatchTests(unittest.TestCase):
     def test_camera_patch_is_optional_and_compatible_with_fps_and_debug_menu(self):
-        self.assertEqual(effect_patches({'debug_camera': '0', 'debug_menu': '0'}), [])
+        # Motion blur is off unless bbport.ini turns it on (DEFAULT_OFF).
+        self.assertEqual(effect_patches({'debug_camera': '0', 'debug_menu': '0'}),
+                         ['Disable Motion Blur (perf increase)'])
         camera = effect_patches({'debug_camera': '1'})
         writes = compile_patches(XML, camera, '01.09', SEGMENTS)
         self.assertGreater(len(writes), 0)

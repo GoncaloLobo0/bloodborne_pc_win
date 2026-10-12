@@ -45,6 +45,10 @@ EFFECTS={
 # PS4's AMD CPU, so a block the game gates on a computed flag never runs. The community fix runs
 # it always; on by default on Intel. BB_INTEL_TONEMAP_FIX=0/1 forces it off or on.
 INTEL_TONEMAP='Intel Black Tonemap Fix'
+# Always applied. Draw requests the GX workers queue in a frame come from one of two 256 KB
+# heaps (0x2195c09, 0x2195c46), emptied when the frame advances; entering an area (m24 -> m27)
+# overran it and the game copied into the null allocation (crashes of 2026-10-10..12).
+DRAW_REQUEST_HEAPS='Larger Per-Frame Draw Request Heaps'
 
 
 def intel_cpu(cpuinfo='/proc/cpuinfo'):
@@ -297,6 +301,8 @@ def main():
     names+=[n for n in effect_patches(read_settings(a.settings)) if n not in names]
     if intel_tonemap_fix() and INTEL_TONEMAP not in names:
         names.append(INTEL_TONEMAP)
+    if DRAW_REQUEST_HEAPS not in names:
+        names.append(DRAW_REQUEST_HEAPS)
     validate_patch_requirements(names,a.game_dir)
     segments=eboot_segments((a.out/'eboot.elf').read_bytes())
     writes=compile_patches(a.xml,names,a.app_version,segments)

@@ -3440,4 +3440,10 @@
             <Line Type="bytes" Address="0x01914c24" Value="c5fa5e458c0f1f00"/>
         </PatchList>
     </Metadata>
+    <Metadata Title="Bloodborne" Name="Larger Per-Frame Draw Request Heaps" Note="The two per-frame heaps the GX workers take draw requests from (0x4d0 bytes each, one 2 KB chunk apiece): 256 KB -> 1 MB. Entering an area overran them and the game copied into a null allocation." Author="bbport" PatchVer="1.0" AppVer="01.09" AppElf="eboot.bin" isEnabled="true">
+        <PatchList>
+            <Line Type="bytes32" Address="0x02595c0a" Value="0x00100000"/>
+            <Line Type="bytes32" Address="0x02595c47" Value="0x00100000"/>
+        </PatchList>
+    </Metadata>
 </Patch>

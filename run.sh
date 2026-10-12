@@ -35,6 +35,10 @@ if [[ -z ${BB_PREBUILT:-} && -z ${BB_IN_NIX_SHELL:-} ]] && ! { command -v pkg-co
     args=''; if (( $# )); then args=$(printf '%q ' "$@"); fi
     exec env BB_IN_NIX_SHELL=1 nix-shell shell.nix --run "bash run.sh $args"
 fi
+# The port's writes into game memory are recorded (a 40 MB ring), so a report of a corrupted
+# command buffer lists which of them landed in it (entering areas, 2026-10-10..12).
+# BB_WRITE_LOG=0 turns it off.
+export BB_WRITE_LOG=${BB_WRITE_LOG:-1}
 # This run's output also goes to $data/logs/<time>.log, so a crash can be looked at afterwards
 # (the newest 10 runs are kept); BB_SAVE_LOG=0 turns it off.
 # BB_SAVE_STATS=1 (launcher: "Save frame statistics"): the per-frame statistics as well,

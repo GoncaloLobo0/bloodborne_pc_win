@@ -24,6 +24,7 @@
 #include "bbport_toggles.h"
 #include "bbport_timeline.h"
 #include "bbport_heap_sites.h"
+#include "bbport_write_log.h"
 #include "video_core/amdgpu/pm4_cmds.h"
 #include "video_core/renderer_vulkan/vk_presenter.h"
 #include "video_core/renderer_vulkan/vk_rasterizer.h"
@@ -2224,7 +2225,20 @@ int PS4_SYSV_ABI sceGnmSqttWaitForEvent() {
 static inline s32 PatchFlipRequest(u32* cmdbuf, u32 size, u32 vo_handle, u32 buf_idx, u32 flip_mode,
                                    s64 flip_arg, void* unk) {
     // check for `prepareFlip` packet
+    const u32* start = cmdbuf;
     cmdbuf += size - 64;
+    if (cmdbuf[0] != 0xc03e1000) {
+        // bbport: the game's command buffer no longer ended with the placeholder when it was
+        // submitted - entering an area, 2026-10-12, like the malformed packets the command
+        // processor skips. Its tail and the port's logged writes into it, before stopping.
+        std::fprintf(stderr, "PrepareFlip placeholder missing: %u-dword buffer at %p, tail:",
+                     size, static_cast<const void*>(start));
+        for (u32 i = 0; i < 16; ++i) {
+            std::fprintf(stderr, " %08x", cmdbuf[i]);
+        }
+        std::fprintf(stderr, "\n");
+        BbWriteLog::DumpRange(reinterpret_cast<u64>(start), u64(size) * 4);
+    }
     ASSERT_MSG(cmdbuf[0] == 0xc03e1000, "Can't find `prepareFlip` packet");
 
     std::array<u32, 7> backup{};

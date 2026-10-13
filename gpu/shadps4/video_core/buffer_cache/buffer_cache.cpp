@@ -523,6 +523,14 @@ BufferCache::BufferCache(const Vulkan::Instance& instance_, Vulkan::Scheduler& s
     bda_pagetable_buffer = std::make_unique<Buffer>(
         instance, 0, bda_pagetable_size, MemoryType::DeviceLocal, "BDA Page Table Buffer");
     runtime.FillBuffer(bda_pagetable_buffer.get(), 0u, bda_pagetable_size, 0u);
+
+    // bbport: the guest's memory sits at 0x10'0000'0000 (runtime_memory.c USER_MIN) and above,
+    // across two arena pages. Their arena is made for both here, while the GPU's address space
+    // is fresh: made when a buffer first straddled the pages, it replaced the one-page arenas
+    // mid-game, and the driver once refused that 8 GiB reservation (ErrorOutOfDeviceMemory,
+    // 2026-10-13).
+    constexpr VAddr GuestBase = 0x10'0000'0000ull;
+    GetArena(GuestBase >> block_shift, (GuestBase + ARENA_PAGE_SIZE) >> block_shift);
 }
 
 BufferCache::~BufferCache() = default;

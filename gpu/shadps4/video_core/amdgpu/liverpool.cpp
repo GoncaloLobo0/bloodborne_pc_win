@@ -995,7 +995,9 @@ std::size_t TruncatedRegisterPacket(std::span<const u32> dcb) {
 }
 // bbport: an invalid packet header (Steam Deck: "PM4 type 0" with dword 0, 8 or 0x10, mid-game): where
 // in which buffer, what surrounds it, and which logged writes of ours landed in the buffer.
-void ReportBadPacket(uintptr_t base, std::size_t dwords, const u32* at, u64 seq, int depth) {
+// guest_base: the guest's buffer when `base` is the copy decoded in its place (SubmitGfx).
+void ReportBadPacket(uintptr_t base, std::size_t dwords, const u32* at, u64 seq, int depth,
+                     uintptr_t guest_base) {
     const uintptr_t address = reinterpret_cast<uintptr_t>(at);
     int prot = 0, type = -1;
     uintptr_t end = 0;
@@ -1015,7 +1017,25 @@ void ReportBadPacket(uintptr_t base, std::size_t dwords, const u32* at, u64 seq,
         }
         std::fprintf(stderr, "\n");
     }
-    BbWriteLog::DumpRange(base, dwords * 4);
+    if (guest_base != base) {
+        // bbport: the logged writes are to guest memory: look them up at the guest's buffer, and
+        // show what it holds now at the same place.
+        const uintptr_t guest_at = guest_base + (address - base);
+        std::fprintf(stderr, "  decoded from a copy of the guest's buffer at %#llx (%#llx there)\n",
+                     (unsigned long long)guest_base, (unsigned long long)guest_at);
+        int gprot = 0, gtype = -1;
+        uintptr_t gend = 0;
+        if (runtime_memory_vma_info(guest_at, &gprot, &gtype, &gend) && (gprot & 1) &&
+            gend >= guest_at + 16 * 4) {
+            std::fprintf(stderr, "  guest now: ");
+            for (int i = 0; i < 16; ++i) {
+                std::fprintf(stderr, i == 0 ? " [%08x]" : " %08x",
+                             reinterpret_cast<const u32*>(guest_at)[i]);
+            }
+            std::fprintf(stderr, "\n");
+        }
+    }
+    BbWriteLog::DumpRange(guest_base, dwords * 4);
     std::fflush(stderr);
 }
 } // namespace
@@ -1064,7 +1084,10 @@ Liverpool::Task Liverpool::ProcessGraphics(std::span<const u32> dcb, std::span<c
             // (dropping it would leave the guest waiting for them).
             static std::atomic<int> reports{0};
             if (reports.fetch_add(1, std::memory_order_relaxed) < 8) {
-                ReportBadPacket(base_addr, dcb_dwords, dcb.data(), seq, dcb_depth);
+                ReportBadPacket(base_addr, dcb_dwords, dcb.data(), seq, dcb_depth,
+                                copy && dcb_depth == 0
+                                    ? reinterpret_cast<uintptr_t>(copy->guest_dcb)
+                                    : base_addr);
             }
             std::size_t skip = 1;
             while (skip < dcb.size() && !PlausibleType3(dcb[skip], dcb.size() - skip)) {
